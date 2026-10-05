@@ -13,6 +13,7 @@ import type {
   Quiz,
   QuizQuestion,
   SubmitQuizResult,
+  QuizOption,
 } from "@/types/database";
 import {
   EmptyState,
@@ -36,6 +37,43 @@ type Phase =
   | "submitting"
   | "result"
   | "error";
+
+/**
+ * Supabase يخزن options حالياً بهذا الشكل:
+ *
+ * {
+ *   A: "الخيار الأول",
+ *   B: "الخيار الثاني",
+ *   C: "الخيار الثالث",
+ *   D: "الخيار الرابع"
+ * }
+ *
+ * بينما الواجهة تحتاج Array حتى نستعمل .map().
+ *
+ * هذه الدالة تدعم الشكل الحالي من قاعدة البيانات،
+ * وتدعم أيضاً Array إذا استُخدم مستقبلاً.
+ */
+function normalizeOptions(
+  options: QuizQuestion["options"]
+): QuizOption[] {
+  if (Array.isArray(options)) {
+    return options;
+  }
+
+  if (
+    options &&
+    typeof options === "object"
+  ) {
+    return Object.entries(
+      options as unknown as Record<string, string>
+    ).map(([key, text]) => ({
+      key,
+      text,
+    }));
+  }
+
+  return [];
+}
 
 export default function QuizPage() {
   const params = useParams<{ quizId: string }>();
@@ -66,10 +104,17 @@ export default function QuizPage() {
         getQuizQuestions(supabase, quizId),
       ]);
 
+      // نحول options من object إلى array قبل تخزين الأسئلة.
+      const normalizedQuestions = questionsData.map((question) => ({
+        ...question,
+        options: normalizeOptions(question.options),
+      }));
+
       setQuiz(quizData);
-      setQuestions(questionsData);
+      setQuestions(normalizedQuestions);
       setPhase("ready");
-    } catch {
+    } catch (error) {
+      console.error("QUIZ LOAD ERROR:", error);
       setPhase("error");
     }
   }, [quizId]);
@@ -132,7 +177,10 @@ export default function QuizPage() {
         icon="📝"
         title="هذا الاختبار غير متوفر حالياً."
         action={
-          <Link href="/quizzes" className="btn-secondary">
+          <Link
+            href="/quizzes"
+            className="btn-secondary"
+          >
             العودة إلى الاختبارات
           </Link>
         }
@@ -212,7 +260,9 @@ export default function QuizPage() {
           <p
             className={cn(
               "font-grotesk text-6xl font-bold",
-              passed ? "text-teal-300" : "text-red-300"
+              passed
+                ? "text-teal-300"
+                : "text-red-300"
             )}
           >
             {result.score}%
@@ -381,6 +431,8 @@ export default function QuizPage() {
 
   const submitting = phase === "submitting";
 
+  const options = normalizeOptions(question.options);
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <header className="space-y-3">
@@ -421,7 +473,7 @@ export default function QuizPage() {
           role="radiogroup"
           aria-label="خيارات الإجابة"
         >
-          {question.options.map((option) => {
+          {options.map((option) => {
             const selected =
               answers[question.id] === option.key;
 

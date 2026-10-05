@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 
@@ -48,218 +54,433 @@ type ReelInteraction = {
 export default function AdminStatsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [xpRows, setXpRows] = useState<XPRow[]>([]);
-  const [lessonProgress, setLessonProgress] = useState<LessonProgress[]>(
+  const [lessonProgress, setLessonProgress] = useState<
+    LessonProgress[]
+  >([]);
+  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>(
     []
   );
-  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
 
   const [reels, setReels] = useState<Reel[]>([]);
-  const [reelLikes, setReelLikes] = useState<ReelInteraction[]>([]);
-  const [reelComments, setReelComments] = useState<ReelInteraction[]>([]);
+  const [reelLikes, setReelLikes] = useState<ReelInteraction[]>(
+    []
+  );
+  const [reelComments, setReelComments] = useState<
+    ReelInteraction[]
+  >([]);
 
   const [totalLessons, setTotalLessons] = useState(0);
 
+  // Exact counts directly from Supabase
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [totalAdmins, setTotalAdmins] = useState(0);
+
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+
+  const loadStats = useCallback(
+    async (isManualRefresh = false) => {
+      try {
+        if (isManualRefresh) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        setError(null);
+
+        const supabase = getSupabase();
+
+        if (!supabase) {
+          throw new Error("تعذر الاتصال بـ Supabase.");
+        }
+
+        // -----------------------------------------
+        // 1. Check logged-in user
+        // -----------------------------------------
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
+
+        if (!user) {
+          throw new Error("يجب تسجيل الدخول أولاً.");
+        }
+
+        // -----------------------------------------
+        // 2. Check admin permission
+        // -----------------------------------------
+        const {
+          data: adminCheck,
+          error: adminError,
+        } = await supabase.rpc("is_current_user_admin");
+
+        if (adminError) {
+          throw adminError;
+        }
+
+        if (!adminCheck) {
+          throw new Error(
+            "ليس لديك صلاحية الوصول إلى الإحصائيات."
+          );
+        }
+
+        // -----------------------------------------
+        // 3. Fetch all real platform data
+        // -----------------------------------------
+        const [
+          studentsCountRes,
+          adminsCountRes,
+          profilesRes,
+          xpRes,
+          progressRes,
+          lessonsRes,
+          attemptsRes,
+          quizzesRes,
+          reelsRes,
+          reelLikesRes,
+          reelCommentsRes,
+        ] = await Promise.all([
+          // Exact students count directly from DB
+          supabase
+            .from("profiles")
+            .select("*", {
+              count: "exact",
+              head: true,
+            })
+            .eq("is_admin", false),
+
+          // Exact admins count directly from DB
+          supabase
+            .from("profiles")
+            .select("*", {
+              count: "exact",
+              head: true,
+            })
+            .eq("is_admin", true),
+
+          // Profiles needed for streams + top students
+          supabase
+            .from("profiles")
+            .select(
+              "id, first_name, last_name, stream, is_admin"
+            ),
+
+          // XP transactions
+          supabase
+            .from("xp_transactions")
+            .select("user_id, amount"),
+
+          // Lesson progress
+          supabase
+            .from("lesson_progress")
+            .select("user_id, lesson_id"),
+
+          // Exact lesson count
+          supabase
+            .from("lessons")
+            .select("id", {
+              count: "exact",
+              head: true,
+            }),
+
+          // Completed quiz attempts
+          supabase
+            .from("quiz_attempts")
+            .select(
+              "user_id, quiz_id, score, completed_at"
+            )
+            .not("completed_at", "is", null),
+
+          // Quizzes
+          supabase
+            .from("quizzes")
+            .select("id, title"),
+
+          // Reels
+          supabase
+            .from("reels")
+            .select(
+              "id, title, is_published, views_count"
+            ),
+
+          // Reel likes
+          supabase
+            .from("reel_likes")
+            .select("reel_id"),
+
+          // Reel comments
+          supabase
+            .from("reel_comments")
+            .select("reel_id"),
+        ]);
+
+        // -----------------------------------------
+        // 4. Check errors
+        // -----------------------------------------
+        if (studentsCountRes.error) {
+          throw studentsCountRes.error;
+        }
+
+        if (adminsCountRes.error) {
+          throw adminsCountRes.error;
+        }
+
+        if (profilesRes.error) {
+          throw profilesRes.error;
+        }
+
+        if (xpRes.error) {
+          throw xpRes.error;
+        }
+
+        if (progressRes.error) {
+          throw progressRes.error;
+        }
+
+        if (lessonsRes.error) {
+          throw lessonsRes.error;
+        }
+
+        if (attemptsRes.error) {
+          throw attemptsRes.error;
+        }
+
+        if (quizzesRes.error) {
+          throw quizzesRes.error;
+        }
+
+        if (reelsRes.error) {
+          throw reelsRes.error;
+        }
+
+        if (reelLikesRes.error) {
+          throw reelLikesRes.error;
+        }
+
+        if (reelCommentsRes.error) {
+          throw reelCommentsRes.error;
+        }
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        // -----------------------------------------
+        // 5. Save exact DB counts
+        // -----------------------------------------
+        setTotalStudents(
+          studentsCountRes.count ?? 0
+        );
+
+        setTotalAdmins(
+          adminsCountRes.count ?? 0
+        );
+
+        // -----------------------------------------
+        // 6. Save remaining data
+        // -----------------------------------------
+        setProfiles(
+          (profilesRes.data ?? []) as Profile[]
+        );
+
+        setXpRows(
+          (xpRes.data ?? []) as XPRow[]
+        );
+
+        setLessonProgress(
+          (progressRes.data ?? []) as LessonProgress[]
+        );
+
+        setQuizAttempts(
+          (attemptsRes.data ?? []) as QuizAttempt[]
+        );
+
+        setQuizzes(
+          (quizzesRes.data ?? []) as Quiz[]
+        );
+
+        setTotalLessons(
+          lessonsRes.count ?? 0
+        );
+
+        setReels(
+          (reelsRes.data ?? []) as Reel[]
+        );
+
+        setReelLikes(
+          (reelLikesRes.data ?? []) as ReelInteraction[]
+        );
+
+        setReelComments(
+          (reelCommentsRes.data ?? []) as ReelInteraction[]
+        );
+      } catch (err) {
+        console.error(
+          "ADMIN STATS ERROR:",
+          err
+        );
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "حدث خطأ أثناء تحميل الإحصائيات."
+        );
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    []
+  );
+
+  // -----------------------------------------
+  // Initial load + realtime
+  // -----------------------------------------
   useEffect(() => {
+    mountedRef.current = true;
+
     loadStats();
-  }, []);
 
-  async function loadStats() {
-    try {
-      setLoading(true);
-      setError(null);
+    const supabase = getSupabase();
 
-      const supabase = getSupabase();
+    if (!supabase) {
+      return;
+    }
 
-      if (!supabase) {
-        throw new Error("تعذر الاتصال بـ Supabase.");
-      }
-
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
-
-      if (!user) {
-        throw new Error("يجب تسجيل الدخول أولاً.");
-      }
-
-      const {
-        data: adminCheck,
-        error: adminError,
-      } = await supabase.rpc("is_current_user_admin");
-
-      if (adminError) {
-        throw adminError;
-      }
-
-      if (!adminCheck) {
-        throw new Error(
-          "ليس لديك صلاحية الوصول إلى الإحصائيات."
+    const scheduleRealtimeRefresh = () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(
+          refreshTimerRef.current
         );
       }
 
-      const [
-        profilesRes,
-        xpRes,
-        progressRes,
-        lessonsRes,
-        attemptsRes,
-        quizzesRes,
-        reelsRes,
-        reelLikesRes,
-        reelCommentsRes,
-      ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select(
-            "id, first_name, last_name, stream, is_admin"
-          ),
+      refreshTimerRef.current =
+        window.setTimeout(() => {
+          loadStats();
+        }, 500);
+    };
 
-        supabase
-          .from("xp_transactions")
-          .select("user_id, amount"),
+    const channel = supabase
+      .channel("admin-stats-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "profiles",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "xp_transactions",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lesson_progress",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "lessons",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "quiz_attempts",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "quizzes",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "reels",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "reel_likes",
+        },
+        scheduleRealtimeRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "reel_comments",
+        },
+        scheduleRealtimeRefresh
+      )
+      .subscribe();
 
-        supabase
-          .from("lesson_progress")
-          .select("user_id, lesson_id"),
+    return () => {
+      mountedRef.current = false;
 
-        supabase
-          .from("lessons")
-          .select("id", {
-            count: "exact",
-            head: true,
-          }),
-
-        supabase
-          .from("quiz_attempts")
-          .select(
-            "user_id, quiz_id, score, completed_at"
-          )
-          .not("completed_at", "is", null),
-
-        supabase
-          .from("quizzes")
-          .select("id, title"),
-
-        supabase
-          .from("reels")
-          .select(
-            "id, title, is_published, views_count"
-          ),
-
-        supabase
-          .from("reel_likes")
-          .select("reel_id"),
-
-        supabase
-          .from("reel_comments")
-          .select("reel_id"),
-      ]);
-
-      if (profilesRes.error) {
-        throw profilesRes.error;
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(
+          refreshTimerRef.current
+        );
       }
 
-      if (xpRes.error) {
-        throw xpRes.error;
-      }
+      supabase.removeChannel(channel);
+    };
+  }, [loadStats]);
 
-      if (progressRes.error) {
-        throw progressRes.error;
-      }
-
-      if (lessonsRes.error) {
-        throw lessonsRes.error;
-      }
-
-      if (attemptsRes.error) {
-        throw attemptsRes.error;
-      }
-
-      if (quizzesRes.error) {
-        throw quizzesRes.error;
-      }
-
-      if (reelsRes.error) {
-        throw reelsRes.error;
-      }
-
-      if (reelLikesRes.error) {
-        throw reelLikesRes.error;
-      }
-
-      if (reelCommentsRes.error) {
-        throw reelCommentsRes.error;
-      }
-
-      setProfiles(profilesRes.data ?? []);
-
-      setXpRows(
-        (xpRes.data ?? []) as XPRow[]
-      );
-
-      setLessonProgress(
-        (progressRes.data ?? []) as LessonProgress[]
-      );
-
-      setQuizAttempts(
-        (attemptsRes.data ?? []) as QuizAttempt[]
-      );
-
-      setQuizzes(
-        (quizzesRes.data ?? []) as Quiz[]
-      );
-
-      setTotalLessons(
-        lessonsRes.count ?? 0
-      );
-
-      setReels(
-        (reelsRes.data ?? []) as Reel[]
-      );
-
-      setReelLikes(
-        (reelLikesRes.data ?? []) as ReelInteraction[]
-      );
-
-      setReelComments(
-        (reelCommentsRes.data ?? []) as ReelInteraction[]
-      );
-    } catch (err) {
-      console.error(
-        "ADMIN STATS ERROR:",
-        err
-      );
-
-      setError(
-        err instanceof Error
-          ? err.message
-          : "حدث خطأ أثناء تحميل الإحصائيات."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // -----------------------------------------
+  // Main calculated stats
+  // -----------------------------------------
   const stats = useMemo(() => {
-    const totalStudents = profiles.filter(
-      (profile) => !profile.is_admin
-    ).length;
-
-    const totalAdmins = profiles.filter(
-      (profile) => profile.is_admin
-    ).length;
-
     const totalXP = xpRows.reduce(
-      (sum, row) => sum + (row.amount ?? 0),
+      (sum, row) =>
+        sum + (row.amount ?? 0),
       0
     );
 
@@ -280,18 +501,37 @@ export default function AdminStatsPage() {
           )
         : 0;
 
+    // Only count actual students as active.
+    const studentIds = new Set(
+      profiles
+        .filter(
+          (profile) => !profile.is_admin
+        )
+        .map((profile) => profile.id)
+    );
+
+    const activeUserIds = new Set<string>();
+
+    xpRows.forEach((row) => {
+      if (studentIds.has(row.user_id)) {
+        activeUserIds.add(row.user_id);
+      }
+    });
+
+    lessonProgress.forEach((row) => {
+      if (studentIds.has(row.user_id)) {
+        activeUserIds.add(row.user_id);
+      }
+    });
+
+    quizAttempts.forEach((row) => {
+      if (studentIds.has(row.user_id)) {
+        activeUserIds.add(row.user_id);
+      }
+    });
+
     const uniqueActiveStudents =
-      new Set([
-        ...xpRows.map(
-          (row) => row.user_id
-        ),
-        ...lessonProgress.map(
-          (row) => row.user_id
-        ),
-        ...quizAttempts.map(
-          (row) => row.user_id
-        ),
-      ]).size;
+      activeUserIds.size;
 
     const totalReels = reels.length;
 
@@ -327,6 +567,8 @@ export default function AdminStatsPage() {
       totalComments,
     };
   }, [
+    totalStudents,
+    totalAdmins,
     profiles,
     xpRows,
     lessonProgress,
@@ -336,6 +578,9 @@ export default function AdminStatsPage() {
     reelComments,
   ]);
 
+  // -----------------------------------------
+  // Top students
+  // -----------------------------------------
   const topStudents = useMemo(() => {
     const xpMap: Record<string, number> = {};
 
@@ -353,10 +598,15 @@ export default function AdminStatsPage() {
         ...profile,
         xp: xpMap[profile.id] ?? 0,
       }))
-      .sort((a, b) => b.xp - a.xp)
+      .sort(
+        (a, b) => b.xp - a.xp
+      )
       .slice(0, 5);
   }, [profiles, xpRows]);
 
+  // -----------------------------------------
+  // Stream statistics
+  // -----------------------------------------
   const streamStats = useMemo(() => {
     const map: Record<string, number> = {};
 
@@ -374,10 +624,15 @@ export default function AdminStatsPage() {
       });
 
     return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
+      .sort(
+        (a, b) => b[1] - a[1]
+      )
       .slice(0, 6);
   }, [profiles]);
 
+  // -----------------------------------------
+  // Quiz statistics
+  // -----------------------------------------
   const quizStats = useMemo(() => {
     const map: Record<
       string,
@@ -429,9 +684,17 @@ export default function AdminStatsPage() {
       .slice(0, 5);
   }, [quizAttempts, quizzes]);
 
+  // -----------------------------------------
+  // Reel statistics
+  // -----------------------------------------
   const reelStats = useMemo(() => {
-    const likesMap: Record<string, number> = {};
-    const commentsMap: Record<string, number> = {};
+    const likesMap: Record<string, number> =
+      {};
+
+    const commentsMap: Record<
+      string,
+      number
+    > = {};
 
     reelLikes.forEach((like) => {
       likesMap[like.reel_id] =
@@ -440,7 +703,8 @@ export default function AdminStatsPage() {
 
     reelComments.forEach((comment) => {
       commentsMap[comment.reel_id] =
-        (commentsMap[comment.reel_id] ?? 0) + 1;
+        (commentsMap[comment.reel_id] ?? 0) +
+        1;
     });
 
     const reelsWithStats = reels.map(
@@ -483,6 +747,9 @@ export default function AdminStatsPage() {
     reelComments,
   ]);
 
+  // -----------------------------------------
+  // Loading
+  // -----------------------------------------
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
@@ -515,6 +782,9 @@ export default function AdminStatsPage() {
     );
   }
 
+  // -----------------------------------------
+  // Error
+  // -----------------------------------------
   if (error) {
     return (
       <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
@@ -540,7 +810,9 @@ export default function AdminStatsPage() {
             </p>
 
             <button
-              onClick={loadStats}
+              onClick={() =>
+                loadStats(true)
+              }
               className="mt-5 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-200 transition hover:bg-red-500/30"
             >
               المحاولة مرة أخرى
@@ -580,10 +852,15 @@ export default function AdminStatsPage() {
             </div>
 
             <button
-              onClick={loadStats}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/10"
+              onClick={() =>
+                loadStats(true)
+              }
+              disabled={refreshing}
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              ↻ تحديث البيانات
+              {refreshing
+                ? "⟳ جاري التحديث..."
+                : "↻ تحديث البيانات"}
             </button>
           </div>
         </div>
@@ -894,6 +1171,10 @@ export default function AdminStatsPage() {
     </main>
   );
 }
+
+// ==========================================
+// Helpers
+// ==========================================
 
 function getFullName(profile: Profile) {
   const name =

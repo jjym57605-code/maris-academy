@@ -1,4 +1,3 @@
-
 "use client";
 
 import type {
@@ -7,12 +6,27 @@ import type {
   User,
 } from "@supabase/supabase-js";
 
+export type Profile = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  stream: string | null;
+  maris_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  is_admin: boolean | null;
+};
+
 export type ProfileDefaults = {
   id: string;
   first_name: string | null;
   last_name: string | null;
   stream: string | null;
 };
+
+/* =====================================================
+   استخراج بيانات الطالب من Supabase Auth
+===================================================== */
 
 export function profileDefaultsFromUser(
   user: User
@@ -40,19 +54,9 @@ export function profileDefaultsFromUser(
   };
 }
 
-function generateMarisId(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-  let code = "";
-
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(
-      Math.floor(Math.random() * chars.length)
-    );
-  }
-
-  return `MR-${code}`;
-}
+/* =====================================================
+   تسجيل الدخول
+===================================================== */
 
 export async function signIn(
   supabase: SupabaseClient,
@@ -71,6 +75,11 @@ export async function signIn(
 
   return data;
 }
+
+/* =====================================================
+   إنشاء الحساب
+   Profile يتخلق تلقائياً بواسطة Supabase Trigger
+===================================================== */
 
 export async function signUp(
   supabase: SupabaseClient,
@@ -94,6 +103,10 @@ export async function signUp(
   return data;
 }
 
+/* =====================================================
+   جلب Session الحالية
+===================================================== */
+
 export async function getSession(
   supabase: SupabaseClient
 ): Promise<Session | null> {
@@ -109,6 +122,10 @@ export async function getSession(
   return session;
 }
 
+/* =====================================================
+   تسجيل الخروج
+===================================================== */
+
 export async function signOut(
   supabase: SupabaseClient
 ): Promise<void> {
@@ -120,101 +137,80 @@ export async function signOut(
   }
 }
 
+/* =====================================================
+   جلب Profile الموجود
+   مهم:
+   هذه الدالة لا تنشئ Profile جديد.
+===================================================== */
+
+export async function getProfile(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<Profile | null> {
+  console.log("=== GET PROFILE ===");
+  console.log("USER ID:", userId);
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("profiles")
+    .select(
+      `
+      id,
+      first_name,
+      last_name,
+      stream,
+      maris_id,
+      created_at,
+      updated_at,
+      is_admin
+      `
+    )
+    .eq("id", userId)
+    .maybeSingle();
+
+  console.log("PROFILE:", data);
+  console.log("PROFILE ERROR:", error);
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Profile | null;
+}
+
+/* =====================================================
+   التأكد من وجود Profile
+   لا يقوم بإنشاء Profile.
+===================================================== */
+
 export async function ensureProfile(
   supabase: SupabaseClient,
   user: User
-) {
+): Promise<Profile> {
   console.log("=== ENSURE PROFILE ===");
   console.log("AUTH USER ID:", user.id);
 
-  // ============================================
-  // 1. نبحث عن Profile موجود
-  // ============================================
-
-  const {
-    data: existingProfile,
-    error: selectError,
-  } = await supabase
-    .from("profiles")
-    .select(
-      "id, first_name, last_name, stream, maris_id, created_at, updated_at, is_admin"
-    )
-    .eq("id", user.id)
-    .maybeSingle();
-
-  console.log("EXISTING PROFILE:", existingProfile);
-  console.log("PROFILE SELECT ERROR:", selectError);
-
-  if (selectError) {
-    throw selectError;
-  }
-
-  // ============================================
-  // 2. إذا موجود → نرجعو مباشرة
-  // ============================================
-
-  if (existingProfile) {
-    console.log("PROFILE FOUND:", existingProfile);
-
-    return existingProfile;
-  }
-
-  // ============================================
-  // 3. Profile غير موجود → ننشئ واحد
-  // ============================================
-
-  console.log(
-    "PROFILE NOT FOUND. CREATING PROFILE..."
+  const profile = await getProfile(
+    supabase,
+    user.id
   );
 
-  const defaults = profileDefaultsFromUser(user);
-
-  const newProfile = {
-    id: user.id,
-    first_name: defaults.first_name,
-    last_name: defaults.last_name,
-    stream: defaults.stream,
-    maris_id: generateMarisId(),
-    is_admin: false,
-  };
-
-  console.log(
-    "NEW PROFILE DATA:",
-    newProfile
-  );
-
-  const {
-    data: createdProfile,
-    error: insertError,
-  } = await supabase
-    .from("profiles")
-    .insert(newProfile)
-    .select(
-      "id, first_name, last_name, stream, maris_id, created_at, updated_at, is_admin"
-    )
-    .single();
-
-  if (insertError) {
+  if (!profile) {
     console.error(
-      "PROFILE INSERT ERROR:",
-      insertError
+      "PROFILE NOT FOUND FOR AUTH USER:",
+      user.id
     );
 
-    throw insertError;
-  }
-
-  if (!createdProfile) {
     throw new Error(
-      "Profile creation returned no data."
+      "لم يتم العثور على الملف الشخصي لهذا الحساب. أعد تسجيل الدخول أو تواصل مع الإدارة."
     );
   }
 
-  console.log(
-    "PROFILE CREATED SUCCESSFULLY:",
-    createdProfile
-  );
+  console.log("PROFILE FOUND:", profile);
 
-  return createdProfile;
+  return profile;
 }
 
 

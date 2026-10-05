@@ -202,7 +202,10 @@ create trigger trg_lesson_complete
 -- في معاملة واحدة. الواجهة ترسل الإجابات المختارة فقط.
 -- النتيجة: 10 XP عن كل إجابة صحيحة.
 -- ─────────────────────────────────────────────
-create or replace function public.submit_quiz(p_quiz_id uuid, p_answers jsonb)
+create or replace function public.submit_quiz(
+  p_quiz_id uuid,
+  p_answers jsonb
+)
 returns jsonb
 language plpgsql
 security definer
@@ -218,58 +221,220 @@ declare
   v_answer     jsonb;
   v_question   record;
   v_is_correct boolean;
+
+  -- Achievement
+  v_achievement_id uuid;
+  v_achievement_title text;
+  v_achievement_description text;
+  v_achievement_icon text;
+  v_achievement_xp int;
+  v_achievement_unlocked boolean := false;
 begin
+
+  -- ================================
+  -- التحقق من تسجيل الدخول
+  -- ================================
   if v_user is null then
     raise exception 'يجب تسجيل الدخول أولاً';
   end if;
 
-  select count(*) into v_total from public.questions where quiz_id = p_quiz_id;
+
+  -- ================================
+  -- عدد الأسئلة
+  -- ================================
+  select count(*)
+  into v_total
+  from public.questions
+  where quiz_id = p_quiz_id;
+
   if v_total = 0 then
     raise exception 'الاختبار غير موجود أو لا يحتوي على أسئلة';
   end if;
 
-  insert into public.quiz_attempts (user_id, quiz_id, total_questions)
-  values (v_user, p_quiz_id, v_total)
+
+  -- ================================
+  -- إنشاء محاولة الاختبار
+  -- ================================
+  insert into public.quiz_attempts (
+    user_id,
+    quiz_id,
+    total_questions
+  )
+  values (
+    v_user,
+    p_quiz_id,
+    v_total
+  )
   returning id into v_attempt_id;
 
-  for v_answer in select * from jsonb_array_elements(p_answers)
+
+  -- ================================
+  -- تصحيح الإجابات
+  -- ================================
+  for v_answer in
+    select * from jsonb_array_elements(p_answers)
   loop
-    select * into v_question
+
+    select *
+    into v_question
     from public.questions
     where id = (v_answer ->> 'question_id')::uuid
       and quiz_id = p_quiz_id;
 
     if found then
-      v_is_correct := v_question.correct_option = (v_answer ->> 'selected_option');
+
+      v_is_correct :=
+        v_question.correct_option =
+        (v_answer ->> 'selected_option');
+
       if v_is_correct then
         v_correct := v_correct + 1;
       end if;
 
-      insert into public.quiz_answers (attempt_id, question_id, selected_option, is_correct)
-      values (v_attempt_id, v_question.id, v_answer ->> 'selected_option', v_is_correct);
+      insert into public.quiz_answers (
+        attempt_id,
+        question_id,
+        selected_option,
+        is_correct
+      )
+      values (
+        v_attempt_id,
+        v_question.id,
+        v_answer ->> 'selected_option',
+        v_is_correct
+      );
+
     end if;
+
   end loop;
 
+
+  -- ================================
+  -- حساب النتيجة و XP
+  -- ================================
   v_score := round(100.0 * v_correct / v_total);
-  v_xp    := v_correct * 10;
+  v_xp := v_correct * 10;
+
 
   update public.quiz_attempts
-  set correct_answers = v_correct,
-      score = v_score,
-      completed_at = now()
+  set
+    correct_answers = v_correct,
+    score = v_score,
+    completed_at = now()
   where id = v_attempt_id;
 
-  insert into public.xp_transactions (user_id, amount, reason, reference_id)
-  values (v_user, v_xp, 'quiz_complete', v_attempt_id);
 
+  -- ================================
+  -- تسجيل XP الاختبار
+  -- ================================
+  insert into public.xp_transactions (
+    user_id,
+    amount,
+    reason,
+    reference_id
+  )
+  values (
+    v_user,
+    v_xp,
+    'quiz_complete',
+    v_attempt_id
+  );
+
+
+  -- =====================================================
+  -- ACHIEVEMENT: أول اختبار
+  -- =====================================================
+
+  /*
+    إذا كانت هذه أول محاولة اختبار للطالب،
+    نبحث عن Achievement بالكود:
+    
+    first_quiz
+  */
+
+  if (
+    select count(*)
+    from public.quiz_attempts
+    where user_id = v_user
+  ) = 1 then
+
+    select
+      id,
+      title,
+      description,
+      icon,
+      xp_reward
+    into
+      v_achievement_id,
+      v_achievement_title,
+      v_achievement_description,
+      v_achievement_icon,
+      v_achievement_xp
+    from public.achievements
+    where code = 'first_quiz'
+    limit 1;
+
+
+    -- إذا كان الإنجاز موجوداً
+    if v_achievement_id is not null then
+
+      -- نتأكد أنه لم يُمنح سابقاً
+      if not exists (
+        select 1
+        from public.user_achievements
+        where user_id = v_user
+          and achievement_id = v_achievement_id
+      ) then
+
+        insert into public.user_achievements (
+          user_id,
+          achievement_id,
+          unlocked_at
+        )
+        values (
+          v_user,
+          v_achievement_id,
+          now()
+        );
+
+        v_achievement_unlocked := true;
+
+      end if;
+
+    end if;
+
+  end if;
+
+
+  -- ================================
+  -- النتيجة للواجهة
+  -- ================================
   return jsonb_build_object(
     'attempt_id', v_attempt_id,
     'score', v_score,
     'correct', v_correct,
     'wrong', v_total - v_correct,
     'total', v_total,
-    'xp_earned', v_xp
+    'xp_earned', v_xp,
+
+    -- Achievement
+    'achievement_unlocked', v_achievement_unlocked,
+
+    'achievement',
+      case
+        when v_achievement_unlocked then
+          jsonb_build_object(
+            'id', v_achievement_id,
+            'title', v_achievement_title,
+            'description', v_achievement_description,
+            'icon', v_achievement_icon,
+            'xp_reward', v_achievement_xp
+          )
+        else
+          null
+      end
   );
+
 end;
 $$;
 

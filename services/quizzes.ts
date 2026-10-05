@@ -1,3 +1,4 @@
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   Quiz,
@@ -41,15 +42,19 @@ export async function listQuizzes(
     const attempts = (attemptsRes.data ?? []).filter(
       (a) => a.quiz_id === quiz.id
     );
+
     return {
       ...(quiz as Quiz),
+
       questionsCount: (questionsRes.data ?? []).filter(
         (q) => q.quiz_id === quiz.id
       ).length,
+
       bestScore:
         attempts.length > 0
           ? Math.max(...attempts.map((a) => a.score ?? 0))
           : null,
+
       attemptsCount: attempts.length,
     };
   });
@@ -66,6 +71,7 @@ export async function getQuiz(
     .maybeSingle();
 
   if (error) throw error;
+
   return data as Quiz | null;
 }
 
@@ -81,24 +87,39 @@ export async function getQuizQuestions(
     .order("order_index");
 
   if (error) throw error;
+
   return (data ?? []) as QuizQuestion[];
 }
 
 /**
  * إرسال إجابات الاختبار للتصحيح في قاعدة البيانات.
- * تُنشئ المحاولة والإجابات ونقاط الخبرة في معاملة واحدة.
+ *
+ * التصحيح يتم بالكامل داخل Supabase عبر submit_quiz.
+ *
+ * النتيجة تتضمن:
+ * - نتيجة الاختبار
+ * - XP المكتسب
+ * - هل تم فتح Achievement جديد
+ * - بيانات الـAchievement الجديد إن وُجد
  */
 export async function submitQuiz(
   supabase: SupabaseClient,
   quizId: string,
-  answers: { question_id: string; selected_option: string }[]
+  answers: {
+    question_id: string;
+    selected_option: string;
+  }[]
 ): Promise<SubmitQuizResult> {
   const { data, error } = await supabase.rpc("submit_quiz", {
     p_quiz_id: quizId,
     p_answers: answers,
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error("SUBMIT QUIZ ERROR:", error);
+    throw error;
+  }
+
   return data as SubmitQuizResult;
 }
 
@@ -121,5 +142,8 @@ export async function getRecentAttempts(
     .limit(limit);
 
   if (error) throw error;
+
   return (data ?? []) as AttemptWithQuiz[];
 }
+
+

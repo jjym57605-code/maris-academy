@@ -1,17 +1,17 @@
 
 // ══════════════════════════════════════════════════════
 // أنواع قاعدة البيانات — MARIS ACADEMY ²⁰²⁷
-// تطابق مخطط supabase/schema.sql
+// تطابق مخطط Supabase
 // ══════════════════════════════════════════════════════
 
 export interface Profile {
   id: string;
-  first_name: string;
-  last_name: string;
+  first_name: string | null;
+  last_name: string | null;
   stream: string | null;
-  maris_id: string;
-  created_at: string;
-  updated_at: string;
+  maris_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface Subject {
@@ -63,7 +63,7 @@ export interface Quiz {
   created_at: string;
 }
 
-/** سؤال كما يظهر للطالب — بدون الإجابة الصحيحة (من العرض questions_public) */
+/** سؤال كما يظهر للطالب — بدون الإجابة الصحيحة */
 export interface QuizQuestion {
   id: string;
   quiz_id: string;
@@ -120,6 +120,7 @@ export interface UserAchievement {
   user_id: string;
   achievement_id: string;
   unlocked_at: string;
+  seen_at: string | null;
 }
 
 /** نتيجة دالة submit_quiz في قاعدة البيانات */

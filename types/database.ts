@@ -1,4 +1,3 @@
-
 // ══════════════════════════════════════════════════════
 // أنواع قاعدة البيانات — MARIS ACADEMY ²⁰²⁷
 // تطابق مخطط Supabase
@@ -123,6 +122,15 @@ export interface UserAchievement {
   seen_at: string | null;
 }
 
+/** Achievement يتم فتحه بعد إكمال الاختبار */
+export interface SubmitQuizAchievement {
+  id: string;
+  title: string;
+  description: string | null;
+  icon: string | null;
+  xp_reward: number;
+}
+
 /** نتيجة دالة submit_quiz في قاعدة البيانات */
 export interface SubmitQuizResult {
   attempt_id: string;
@@ -131,6 +139,9 @@ export interface SubmitQuizResult {
   wrong: number;
   total: number;
   xp_earned: number;
+
+  achievement_unlocked: boolean;
+  achievement: SubmitQuizAchievement | null;
 }
 
 /** الشُعب الدراسية لبكالوريا الجزائر */
@@ -142,5 +153,4 @@ export const BAC_STREAMS = [
   "آداب وفلسفة",
   "لغات أجنبية",
 ] as const;
-
 

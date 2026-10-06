@@ -12,6 +12,7 @@ type Stats = {
   quizzes: number;
   reels: number;
   achievements: number;
+  reviews: number;
 };
 
 type RecentStudent = {
@@ -46,11 +47,12 @@ export default function AdminPage() {
     quizzes: 0,
     reels: 0,
     achievements: 0,
+    reviews: 0,
   });
 
-  const [recentStudents, setRecentStudents] = useState<
-    RecentStudent[]
-  >([]);
+  const [recentStudents, setRecentStudents] = useState<RecentStudent[]>(
+    []
+  );
 
   async function loadDashboard() {
     try {
@@ -87,6 +89,7 @@ export default function AdminPage() {
         quizzesResult,
         reelsResult,
         achievementsResult,
+        reviewsResult,
       ] = await Promise.all([
         supabase.rpc("get_admin_students"),
 
@@ -108,6 +111,10 @@ export default function AdminPage() {
 
         supabase
           .from("achievements")
+          .select("id", { count: "exact", head: true }),
+
+        supabase
+          .from("platform_reviews")
           .select("id", { count: "exact", head: true }),
       ]);
 
@@ -135,6 +142,10 @@ export default function AdminPage() {
         throw achievementsResult.error;
       }
 
+      if (reviewsResult.error) {
+        throw reviewsResult.error;
+      }
+
       const allStudents =
         (adminStudentsResult.data ?? []) as AdminStudent[];
 
@@ -145,6 +156,7 @@ export default function AdminPage() {
         quizzes: quizzesResult.count ?? 0,
         reels: reelsResult.count ?? 0,
         achievements: achievementsResult.count ?? 0,
+        reviews: reviewsResult.count ?? 0,
       });
 
       setRecentStudents(
@@ -240,7 +252,7 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               icon="👥"
               title="الطلاب"
@@ -288,6 +300,14 @@ export default function AdminPage() {
               href="/admin/achievements"
               accent="amber"
             />
+
+            <StatCard
+              icon="⭐"
+              title="آراء الطلبة"
+              value={stats.reviews}
+              href="/admin/reviews"
+              accent="yellow"
+            />
           </div>
         </section>
 
@@ -332,6 +352,12 @@ export default function AdminPage() {
               href="/admin/achievements"
               icon="🏆"
               title="إدارة الإنجازات"
+            />
+
+            <QuickAction
+              href="/admin/reviews"
+              icon="⭐"
+              title="مراجعة آراء الطلبة"
             />
 
             <QuickAction
@@ -448,7 +474,8 @@ function StatCard({
     | "emerald"
     | "violet"
     | "sky"
-    | "amber";
+    | "amber"
+    | "yellow";
 }) {
   const styles = {
     cyan: {
@@ -480,6 +507,11 @@ function StatCard({
       border: "border-amber-400/10 hover:border-amber-400/25",
       icon: "bg-amber-400/10",
       value: "text-amber-300",
+    },
+    yellow: {
+      border: "border-yellow-400/10 hover:border-yellow-400/25",
+      icon: "bg-yellow-400/10",
+      value: "text-yellow-300",
     },
   };
 
@@ -529,7 +561,7 @@ function QuickAction({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-4 transition hover:border-cyan-400/15 hover:bg-cyan-400/[0.05]"
+      className="group flex items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.025] p-4 transition hover:border-cyan-400/15 hover:bg-cyan-400/[0.05]"
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-lg">
         {icon}

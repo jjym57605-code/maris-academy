@@ -168,14 +168,14 @@ export default function AboutPage() {
 
   return (
     <div className="space-y-8 pb-8">
-      {/* Home navigation */}
+      {/* Back to platform */}
       <div>
         <Link
-          href="/"
+          href="/dashboard"
           className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-bold text-foam/70 transition-all duration-300 hover:border-cyan-400/20 hover:bg-cyan-400/5 hover:text-cyan-300"
         >
           <span>→</span>
-          العودة إلى الصفحة الرئيسية
+          العودة إلى المنصة
         </Link>
       </div>
 

@@ -226,7 +226,7 @@ export default function DashboardPage() {
           title="ابدأ أول درس لك لتبدأ رحلتك التعليمية."
           action={
             <Link
-              href="/courses"
+              href="/library"
               className="btn-primary"
             >
               استكشف الدروس
@@ -409,4 +409,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

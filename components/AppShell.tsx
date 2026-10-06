@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -27,6 +28,12 @@ const NAV_ITEMS = [
   { href: "/maris-id", icon: "🪪", label: "MARIS ID" },
   { href: "/profile", icon: "👤", label: "ملفي" },
 ] as const;
+
+const ABOUT_NAV_ITEM = {
+  href: "/about",
+  icon: "💙",
+  label: "عن MARIS",
+} as const;
 
 const ADMIN_NAV_ITEM = {
   href: "/admin",
@@ -157,6 +164,23 @@ export default function AppShell({
             </Link>
           ))}
 
+          {/* ═══ عن MARIS ═══ */}
+          <Link
+            href={ABOUT_NAV_ITEM.href}
+            className={cn(
+              "mt-3 flex min-h-[44px] items-center gap-3 rounded-2xl px-4 py-3 font-bold transition-all duration-200",
+              isActive(pathname, ABOUT_NAV_ITEM.href)
+                ? "bg-gradient-to-l from-ocean-500/25 to-cyan-400/15 text-cyan-300 shadow-glow"
+                : "text-foam/60 hover:bg-white/5 hover:text-foam"
+            )}
+          >
+            <span className="text-xl" aria-hidden>
+              {ABOUT_NAV_ITEM.icon}
+            </span>
+
+            {ABOUT_NAV_ITEM.label}
+          </Link>
+
           {/* ═══ لوحة الإدارة — للأدمن فقط ═══ */}
           {isAdmin && (
             <Link
@@ -206,7 +230,7 @@ export default function AppShell({
         <div
           className={cn(
             "grid",
-            isAdmin ? "grid-cols-5" : "grid-cols-6"
+            isAdmin ? "grid-cols-7" : "grid-cols-6"
           )}
         >
           {NAV_ITEMS.slice(0, 5).map((item) => (
@@ -227,6 +251,22 @@ export default function AppShell({
               {item.label}
             </Link>
           ))}
+
+          <Link
+            href={ABOUT_NAV_ITEM.href}
+            className={cn(
+              "flex min-h-[56px] flex-col items-center justify-center gap-1 py-2 text-[11px] font-bold transition-colors",
+              isActive(pathname, ABOUT_NAV_ITEM.href)
+                ? "text-cyan-300"
+                : "text-foam/50 hover:text-foam"
+            )}
+          >
+            <span className="text-lg" aria-hidden>
+              {ABOUT_NAV_ITEM.icon}
+            </span>
+
+            {ABOUT_NAV_ITEM.label}
+          </Link>
 
           {isAdmin && (
             <Link
@@ -250,5 +290,6 @@ export default function AppShell({
     </div>
   );
 }
+
 
 

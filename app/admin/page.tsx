@@ -269,6 +269,32 @@ export default function AdminPage() {
               accent="blue"
             />
 
+            {/* مكتبة الدروس */}
+            <Link
+              href="/admin/library"
+              className="group rounded-2xl border border-emerald-400/10 bg-[#071b2d]/80 p-5 shadow-lg shadow-black/10 transition hover:border-emerald-400/25 hover:bg-[#08283d]/80"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-500">
+                    مكتبة الدروس
+                  </p>
+
+                  <p className="mt-2 text-3xl font-bold text-emerald-300">
+                    📖
+                  </p>
+
+                  <p className="mt-2 text-[11px] text-slate-600 transition group-hover:text-slate-400">
+                    فتح القسم ←
+                  </p>
+                </div>
+
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-400/10 text-xl">
+                  📖
+                </div>
+              </div>
+            </Link>
+
             <StatCard
               icon="📖"
               title="الدروس"
@@ -333,7 +359,13 @@ export default function AdminPage() {
             <QuickAction
               href="/admin/courses"
               icon="📚"
-              title="إدارة الدروس"
+              title="إدارة الدورات"
+            />
+
+            <QuickAction
+              href="/admin/library"
+              icon="📖"
+              title="إدارة مكتبة الدروس"
             />
 
             <QuickAction

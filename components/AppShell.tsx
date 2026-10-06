@@ -20,7 +20,8 @@ import SetupNotice from "@/components/SetupNotice";
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "🏠", label: "الرئيسية" },
   { href: "/reels", icon: "🎬", label: "الريلزات" },
-  { href: "/courses", icon: "📚", label: "الدروس" },
+  { href: "/courses", icon: "📚", label: "الدورات" },
+  { href: "/library", icon: "📖", label: "مكتبة الدروس" },
   { href: "/quizzes", icon: "📝", label: "الاختبارات" },
   { href: "/progress", icon: "📊", label: "تقدمي" },
   { href: "/leaderboard", icon: "🏆", label: "الترتيب" },

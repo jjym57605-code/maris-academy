@@ -18,42 +18,54 @@ const ADMIN_ITEMS = [
     href: "/admin/reels",
     active: true,
   },
-  {
-    label: "الدروس",
-    icon: "📚",
-    href: "/admin/courses",
-    active: true,
-  },
-{
-  label: "الطلاب",
-  icon: "👥",
-  href: "/admin/students",
+ {
+  label: "الدورات",
+  icon: "📚",
+  href: "/admin/courses",
   active: true,
 },
-    {
+  {
+    label: "مكتبة الدروس",
+    icon: "📖",
+    href: "/admin/library",
+    active: true,
+  },
+  {
+    label: "الطلاب",
+    icon: "👥",
+    href: "/admin/students",
+    active: true,
+  },
+  {
+  label: "آراء الطلبة",
+  icon: "💬",
+  href: "/admin/reviews",
+  active: true,
+},
+  {
     label: "الإنجازات",
     icon: "🏆",
     href: "/admin/achievements",
     active: true,
   },
   {
-  label: "الاختبارات",
-  icon: "📝",
-  href: "/admin/quizzes",
-  active: true,
-},
-{
-  label: "الإحصائيات",
-  icon: "📊",
-  href: "/admin/stats",
-  active: true,
-},
-{
-  label: "الإعدادات",
-  icon: "⚙️",
-  href: "/admin/settings",
-  active: true,
-},
+    label: "الاختبارات",
+    icon: "📝",
+    href: "/admin/quizzes",
+    active: true,
+  },
+  {
+    label: "الإحصائيات",
+    icon: "📊",
+    href: "/admin/stats",
+    active: true,
+  },
+  {
+    label: "الإعدادات",
+    icon: "⚙️",
+    href: "/admin/settings",
+    active: true,
+  },
 ];
 
 export default function AdminLayout({
@@ -171,4 +183,5 @@ export default function AdminLayout({
     </div>
   );
 }
+
 

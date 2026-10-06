@@ -3,100 +3,171 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+color-scheme: dark;
 }
 
 html {
-  scroll-behavior: smooth;
+scroll-behavior: smooth;
 }
 
 body {
-  @apply bg-navy-950 text-foam font-tajawal antialiased;
-  background-image:
-    radial-gradient(ellipse 80% 50% at 70% -10%, rgba(30, 136, 229, 0.18), transparent),
-    radial-gradient(ellipse 60% 40% at 10% 110%, rgba(45, 212, 191, 0.1), transparent);
-  background-attachment: fixed;
-  min-height: 100vh;
+@apply bg-navy-950 text-foam font-tajawal antialiased;
+
+background-image:
+radial-gradient(
+ellipse 80% 50% at 70% -10%,
+rgba(30, 136, 229, 0.18),
+transparent
+),
+radial-gradient(
+ellipse 60% 40% at 10% 110%,
+rgba(45, 212, 191, 0.1),
+transparent
+),
+url("/images/recraft-v4_a_Create_a_premium_mod.webp");
+
+background-size:
+auto,
+auto,
+cover;
+
+background-position:
+center,
+center,
+center;
+
+background-repeat:
+no-repeat,
+no-repeat,
+no-repeat;
+
+background-attachment: fixed;
+
+min-height: 100vh;
 }
 
 ::selection {
-  @apply bg-cyan-400/30 text-white;
+@apply bg-cyan-400/30 text-white;
 }
 
 /* ── شريط التمرير ── */
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+width: 8px;
+height: 8px;
 }
+
 ::-webkit-scrollbar-track {
-  background: transparent;
+background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  @apply bg-navy-600 rounded-full;
+@apply bg-navy-600 rounded-full;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-ocean-600;
+@apply bg-ocean-600;
 }
 
 @layer components {
-  /* ── بطاقة زجاجية ── */
-  .glass-card {
-    @apply rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-card;
-  }
+/* ── بطاقة زجاجية ── */
 
-  .glass-card-hover {
-    @apply transition-all duration-300 hover:border-cyan-400/30 hover:bg-white/[0.07] hover:shadow-glow;
-  }
+.glass-card {
+@apply rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-card;
+}
 
-  /* ── زر رئيسي ── */
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-ocean-500 to-cyan-500
-      px-6 py-3 font-bold text-white shadow-glow transition-all duration-300
-      hover:from-ocean-400 hover:to-cyan-400 hover:shadow-[0_0_50px_rgba(34,211,238,0.3)]
-      active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px];
-  }
+.glass-card-hover {
+@apply transition-all duration-300 hover:border-cyan-400/30 hover:bg-white/[0.07] hover:shadow-glow;
+}
 
-  /* ── زر ثانوي ── */
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5
-      px-6 py-3 font-bold text-foam transition-all duration-300
-      hover:border-cyan-400/40 hover:bg-white/10 active:scale-[0.98]
-      disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px];
-  }
+/* ── زر رئيسي ── */
 
-  /* ── حقل إدخال ── */
-  .input-field {
-    @apply w-full rounded-2xl border border-white/10 bg-navy-900/70 px-4 py-3 text-foam
-      placeholder:text-foam/30 outline-none transition-all duration-300
-      focus:border-cyan-400/50 focus:bg-navy-900 focus:ring-2 focus:ring-cyan-400/20 min-h-[44px];
-  }
+.btn-primary {
+@apply inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-ocean-500 to-cyan-500
+px-6 py-3 font-bold text-white shadow-glow transition-all duration-300
+hover:from-ocean-400 hover:to-cyan-400 hover:shadow-[0_0_50px_rgba(34,211,238,0.3)]
+active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px];
+}
 
-  /* ── عنوان صفحة ── */
-  .page-title {
-    @apply text-2xl font-extrabold text-white sm:text-3xl;
-  }
+/* ── زر ثانوي ── */
 
-  /* ── شريط تقدم ── */
-  .progress-track {
-    @apply h-2.5 w-full overflow-hidden rounded-full bg-navy-700/60;
-  }
+.btn-secondary {
+@apply inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5
+px-6 py-3 font-bold text-foam transition-all duration-300
+hover:border-cyan-400/40 hover:bg-white/10 active:scale-[0.98]
+disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px];
+}
 
-  .progress-fill {
-    @apply h-full rounded-full bg-gradient-to-l from-cyan-400 to-teal-300 transition-all duration-700 ease-out;
-  }
+/* ── حقل إدخال ── */
 
-  /* ── شارة ── */
-  .badge {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300;
-  }
+.input-field {
+@apply w-full rounded-2xl border border-white/10 bg-navy-900/70 px-4 py-3 text-foam
+placeholder:text-foam/30 outline-none transition-all duration-300
+focus:border-cyan-400/50 focus:bg-navy-900 focus:ring-2 focus:ring-cyan-400/20 min-h-[44px];
+}
+
+/* ── عنوان صفحة ── */
+
+.page-title {
+@apply text-2xl font-extrabold text-white sm:text-3xl;
+}
+
+/* ── شريط تقدم ── */
+
+.progress-track {
+@apply h-2.5 w-full overflow-hidden rounded-full bg-navy-700/60;
+}
+
+.progress-fill {
+@apply h-full rounded-full bg-gradient-to-l from-cyan-400 to-teal-300 transition-all duration-700 ease-out;
+}
+
+/* ── شارة ── */
+
+.badge {
+@apply inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300;
+}
 }
 
 @layer utilities {
-  .text-gradient {
-    @apply bg-gradient-to-l from-cyan-300 via-ocean-300 to-teal-200 bg-clip-text text-transparent;
-  }
-
-  .skeleton {
-    @apply animate-shimmer rounded-2xl bg-gradient-to-l from-white/5 via-white/10 to-white/5 bg-[length:200%_100%];
-  }
+.text-gradient {
+@apply bg-gradient-to-l from-cyan-300 via-ocean-300 to-teal-200 bg-clip-text text-transparent;
 }
+
+.skeleton {
+@apply animate-shimmer rounded-2xl bg-gradient-to-l from-white/5 via-white/10 to-white/5 bg-[length:200%_100%];
+}
+}
+
+/* ── تحسين خلفية الهاتف فقط ── */
+
+@media (max-width: 640px) {
+body {
+background-attachment: scroll;
+
+background-size:
+  auto,
+  auto,
+  auto 100%;
+
+background-position:
+  center,
+  center,
+  center top;
+
+position: relative;
+
+
+}
+
+body::before {
+content: "";
+position: fixed;
+inset: 0;
+z-index: -1;
+pointer-events: none;
+background: rgba(2, 11, 24, 0.38);
+}
+}
+
+

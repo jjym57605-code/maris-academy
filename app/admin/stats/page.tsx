@@ -1,14 +1,21 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+// ══════════════════════════════════════════════════════
+// MARIS ACADEMY ²⁰²⁷
+// لوحة الإدارة — الإحصائيات الحية
+//
+// البيانات:
+// Supabase → مباشرة
+//
+// التحديث:
+// 1. Supabase Realtime
+// 2. Polling كل 5 ثوانٍ كـ fallback
+// ══════════════════════════════════════════════════════
 
 type Profile = {
   id: string;
@@ -44,52 +51,71 @@ type Reel = {
   id: string;
   title: string;
   is_published: boolean;
-  views_count: number;
+  views_count: number | null;
 };
 
 type ReelInteraction = {
   reel_id: string;
 };
 
+type DataState = {
+  profiles: Profile[];
+  xpRows: XPRow[];
+  lessonProgress: LessonProgress[];
+  quizAttempts: QuizAttempt[];
+  quizzes: Quiz[];
+  reels: Reel[];
+  reelLikes: ReelInteraction[];
+  reelComments: ReelInteraction[];
+  totalLessons: number;
+};
+
+const EMPTY_DATA: DataState = {
+  profiles: [],
+  xpRows: [],
+  lessonProgress: [],
+  quizAttempts: [],
+  quizzes: [],
+  reels: [],
+  reelLikes: [],
+  reelComments: [],
+  totalLessons: 0,
+};
+
 export default function AdminStatsPage() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [xpRows, setXpRows] = useState<XPRow[]>([]);
-  const [lessonProgress, setLessonProgress] = useState<
-    LessonProgress[]
-  >([]);
-  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>(
-    []
-  );
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-
-  const [reels, setReels] = useState<Reel[]>([]);
-  const [reelLikes, setReelLikes] = useState<ReelInteraction[]>(
-    []
-  );
-  const [reelComments, setReelComments] = useState<
-    ReelInteraction[]
-  >([]);
-
-  const [totalLessons, setTotalLessons] = useState(0);
-
-  // Exact counts directly from Supabase
-  const [totalStudents, setTotalStudents] = useState(0);
-  const [totalAdmins, setTotalAdmins] = useState(0);
+  const [data, setData] = useState<DataState>(EMPTY_DATA);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshTimerRef = useRef<number | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  const [isRealtimeConnected, setIsRealtimeConnected] =
+    useState(false);
+
   const mountedRef = useRef(true);
+  const loadingRef = useRef(false);
+
+  // ══════════════════════════════════════════════════════
+  // تحميل البيانات الحقيقية من Supabase
+  // ══════════════════════════════════════════════════════
 
   const loadStats = useCallback(
-    async (isManualRefresh = false) => {
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent ?? false;
+
+      if (loadingRef.current) {
+        return;
+      }
+
+      loadingRef.current = true;
+
       try {
-        if (isManualRefresh) {
-          setRefreshing(true);
-        } else {
+        if (!silent) {
           setLoading(true);
+        } else {
+          setRefreshing(true);
         }
 
         setError(null);
@@ -97,28 +123,38 @@ export default function AdminStatsPage() {
         const supabase = getSupabase();
 
         if (!supabase) {
-          throw new Error("تعذر الاتصال بـ Supabase.");
+          throw new Error(
+            "تعذر الاتصال بـ Supabase. تحقق من ملف .env.local."
+          );
         }
 
-        // -----------------------------------------
-        // 1. Check logged-in user
-        // -----------------------------------------
+        // ────────────────────────────────────────────────
+        // أولاً: نتحقق من الجلسة
+        // لا نستعمل getUser مباشرة هنا حتى لا نرمي
+        // AuthSessionMissingError أثناء بداية تحميل الصفحة.
+        // ────────────────────────────────────────────────
+
         const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+          data: sessionData,
+          error: sessionError,
+        } = await supabase.auth.getSession();
 
-        if (userError) {
-          throw userError;
+        if (sessionError) {
+          throw sessionError;
         }
 
-        if (!user) {
-          throw new Error("يجب تسجيل الدخول أولاً.");
+        const session = sessionData.session;
+
+        if (!session) {
+          throw new Error(
+            "جلسة تسجيل الدخول غير موجودة. أعد تسجيل الدخول إلى حساب الأدمن."
+          );
         }
 
-        // -----------------------------------------
-        // 2. Check admin permission
-        // -----------------------------------------
+        // ────────────────────────────────────────────────
+        // التحقق من أن المستخدم أدمن
+        // ────────────────────────────────────────────────
+
         const {
           data: adminCheck,
           error: adminError,
@@ -134,12 +170,11 @@ export default function AdminStatsPage() {
           );
         }
 
-        // -----------------------------------------
-        // 3. Fetch all real platform data
-        // -----------------------------------------
+        // ────────────────────────────────────────────────
+        // جلب كل البيانات الحقيقية
+        // ────────────────────────────────────────────────
+
         const [
-          studentsCountRes,
-          adminsCountRes,
           profilesRes,
           xpRes,
           progressRes,
@@ -150,42 +185,20 @@ export default function AdminStatsPage() {
           reelLikesRes,
           reelCommentsRes,
         ] = await Promise.all([
-          // Exact students count directly from DB
-          supabase
-            .from("profiles")
-            .select("*", {
-              count: "exact",
-              head: true,
-            })
-            .eq("is_admin", false),
-
-          // Exact admins count directly from DB
-          supabase
-            .from("profiles")
-            .select("*", {
-              count: "exact",
-              head: true,
-            })
-            .eq("is_admin", true),
-
-          // Profiles needed for streams + top students
           supabase
             .from("profiles")
             .select(
               "id, first_name, last_name, stream, is_admin"
             ),
 
-          // XP transactions
           supabase
             .from("xp_transactions")
             .select("user_id, amount"),
 
-          // Lesson progress
           supabase
             .from("lesson_progress")
             .select("user_id, lesson_id"),
 
-          // Exact lesson count
           supabase
             .from("lessons")
             .select("id", {
@@ -193,7 +206,6 @@ export default function AdminStatsPage() {
               head: true,
             }),
 
-          // Completed quiz attempts
           supabase
             .from("quiz_attempts")
             .select(
@@ -201,145 +213,104 @@ export default function AdminStatsPage() {
             )
             .not("completed_at", "is", null),
 
-          // Quizzes
           supabase
             .from("quizzes")
             .select("id, title"),
 
-          // Reels
           supabase
             .from("reels")
             .select(
               "id, title, is_published, views_count"
             ),
 
-          // Reel likes
           supabase
             .from("reel_likes")
             .select("reel_id"),
 
-          // Reel comments
           supabase
             .from("reel_comments")
             .select("reel_id"),
         ]);
 
-        // -----------------------------------------
-        // 4. Check errors
-        // -----------------------------------------
-        if (studentsCountRes.error) {
-          throw studentsCountRes.error;
+        // ────────────────────────────────────────────────
+        // فحص الأخطاء
+        // ────────────────────────────────────────────────
+
+        const results = [
+          profilesRes,
+          xpRes,
+          progressRes,
+          lessonsRes,
+          attemptsRes,
+          quizzesRes,
+          reelsRes,
+          reelLikesRes,
+          reelCommentsRes,
+        ];
+
+        for (const result of results) {
+          if (result.error) {
+            throw result.error;
+          }
         }
 
-        if (adminsCountRes.error) {
-          throw adminsCountRes.error;
-        }
-
-        if (profilesRes.error) {
-          throw profilesRes.error;
-        }
-
-        if (xpRes.error) {
-          throw xpRes.error;
-        }
-
-        if (progressRes.error) {
-          throw progressRes.error;
-        }
-
-        if (lessonsRes.error) {
-          throw lessonsRes.error;
-        }
-
-        if (attemptsRes.error) {
-          throw attemptsRes.error;
-        }
-
-        if (quizzesRes.error) {
-          throw quizzesRes.error;
-        }
-
-        if (reelsRes.error) {
-          throw reelsRes.error;
-        }
-
-        if (reelLikesRes.error) {
-          throw reelLikesRes.error;
-        }
-
-        if (reelCommentsRes.error) {
-          throw reelCommentsRes.error;
-        }
+        // ────────────────────────────────────────────────
+        // حفظ البيانات
+        // ────────────────────────────────────────────────
 
         if (!mountedRef.current) {
           return;
         }
 
-        // -----------------------------------------
-        // 5. Save exact DB counts
-        // -----------------------------------------
-        setTotalStudents(
-          studentsCountRes.count ?? 0
-        );
+        setData({
+          profiles:
+            (profilesRes.data ?? []) as Profile[],
 
-        setTotalAdmins(
-          adminsCountRes.count ?? 0
-        );
+          xpRows:
+            (xpRes.data ?? []) as XPRow[],
 
-        // -----------------------------------------
-        // 6. Save remaining data
-        // -----------------------------------------
-        setProfiles(
-          (profilesRes.data ?? []) as Profile[]
-        );
+          lessonProgress:
+            (progressRes.data ??
+              []) as LessonProgress[],
 
-        setXpRows(
-          (xpRes.data ?? []) as XPRow[]
-        );
+          quizAttempts:
+            (attemptsRes.data ??
+              []) as QuizAttempt[],
 
-        setLessonProgress(
-          (progressRes.data ?? []) as LessonProgress[]
-        );
+          quizzes:
+            (quizzesRes.data ?? []) as Quiz[],
 
-        setQuizAttempts(
-          (attemptsRes.data ?? []) as QuizAttempt[]
-        );
+          reels:
+            (reelsRes.data ?? []) as Reel[],
 
-        setQuizzes(
-          (quizzesRes.data ?? []) as Quiz[]
-        );
+          reelLikes:
+            (reelLikesRes.data ??
+              []) as ReelInteraction[],
 
-        setTotalLessons(
-          lessonsRes.count ?? 0
-        );
+          reelComments:
+            (reelCommentsRes.data ??
+              []) as ReelInteraction[],
 
-        setReels(
-          (reelsRes.data ?? []) as Reel[]
-        );
+          totalLessons: lessonsRes.count ?? 0,
+        });
 
-        setReelLikes(
-          (reelLikesRes.data ?? []) as ReelInteraction[]
-        );
-
-        setReelComments(
-          (reelCommentsRes.data ?? []) as ReelInteraction[]
-        );
+        setLastUpdated(new Date());
       } catch (err) {
-        console.error(
-          "ADMIN STATS ERROR:",
-          err
-        );
+        console.error("ADMIN STATS ERROR:", err);
 
         if (!mountedRef.current) {
           return;
         }
 
-        setError(
+        const message =
           err instanceof Error
             ? err.message
-            : "حدث خطأ أثناء تحميل الإحصائيات."
-        );
+            : "حدث خطأ أثناء تحميل الإحصائيات.";
+
+        setError(message);
       } finally {
+        loadingRef.current = false;
+
         if (mountedRef.current) {
           setLoading(false);
           setRefreshing(false);
@@ -349,35 +320,114 @@ export default function AdminStatsPage() {
     []
   );
 
-  // -----------------------------------------
-  // Initial load + realtime
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+  // مراقبة تسجيل الدخول
+  // ══════════════════════════════════════════════════════
+
   useEffect(() => {
     mountedRef.current = true;
 
-    loadStats();
+    const supabase = getSupabase();
 
+    if (!supabase) {
+      setError(
+        "تعذر الاتصال بـ Supabase. تحقق من إعدادات البيئة."
+      );
+      setLoading(false);
+
+      return () => {
+        mountedRef.current = false;
+      };
+    }
+
+    let authReady = false;
+
+    // الاشتراك أولاً حتى لا نفقد حدث SIGNED_IN
+    const {
+      data: authListener,
+    } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        if (event === "SIGNED_IN" && session) {
+          authReady = true;
+
+          void loadStats();
+          return;
+        }
+
+        if (event === "TOKEN_REFRESHED" && session) {
+          return;
+        }
+
+        if (event === "SIGNED_OUT") {
+          setError(
+            "انتهت جلسة تسجيل الدخول. أعد تسجيل الدخول إلى حساب الأدمن."
+          );
+
+          setData(EMPTY_DATA);
+          setLoading(false);
+        }
+      }
+    );
+
+    // فحص الجلسة الحالية
+    void (async () => {
+      try {
+        const {
+          data: sessionData,
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        if (sessionData.session) {
+          authReady = true;
+          await loadStats();
+        } else if (!authReady) {
+          setLoading(false);
+          setError(
+            "جلسة تسجيل الدخول غير موجودة. أعد تسجيل الدخول إلى حساب الأدمن."
+          );
+        }
+      } catch (err) {
+        console.error("ADMIN AUTH ERROR:", err);
+
+        if (mountedRef.current) {
+          setLoading(false);
+
+          setError(
+            err instanceof Error
+              ? err.message
+              : "تعذر التحقق من جلسة تسجيل الدخول."
+          );
+        }
+      }
+    })();
+
+    return () => {
+      mountedRef.current = false;
+      authListener.subscription.unsubscribe();
+    };
+  }, [loadStats]);
+
+  // ══════════════════════════════════════════════════════
+  // Live Realtime
+  // ══════════════════════════════════════════════════════
+
+  useEffect(() => {
     const supabase = getSupabase();
 
     if (!supabase) {
       return;
     }
 
-    const scheduleRealtimeRefresh = () => {
-      if (refreshTimerRef.current !== null) {
-        window.clearTimeout(
-          refreshTimerRef.current
-        );
-      }
-
-      refreshTimerRef.current =
-        window.setTimeout(() => {
-          loadStats();
-        }, 500);
-    };
-
     const channel = supabase
-      .channel("admin-stats-realtime")
+      .channel("admin-stats-live")
       .on(
         "postgres_changes",
         {
@@ -385,7 +435,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "profiles",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -394,7 +446,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "xp_transactions",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -403,7 +457,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "lesson_progress",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -412,7 +468,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "lessons",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -421,7 +479,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "quiz_attempts",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -430,7 +490,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "quizzes",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -439,7 +501,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "reels",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -448,7 +512,9 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "reel_likes",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
       .on(
         "postgres_changes",
@@ -457,43 +523,70 @@ export default function AdminStatsPage() {
           schema: "public",
           table: "reel_comments",
         },
-        scheduleRealtimeRefresh
+        () => {
+          void loadStats({ silent: true });
+        }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setIsRealtimeConnected(
+          status === "SUBSCRIBED"
+        );
+      });
 
     return () => {
-      mountedRef.current = false;
-
-      if (refreshTimerRef.current !== null) {
-        window.clearTimeout(
-          refreshTimerRef.current
-        );
-      }
-
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
   }, [loadStats]);
 
-  // -----------------------------------------
-  // Main calculated stats
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+  // Polling
+  //
+  // حتى إذا لم تكن Realtime مفعلة على الجداول،
+  // تبقى الإحصائيات تتحدث تلقائياً كل 5 ثوانٍ.
+  // ══════════════════════════════════════════════════════
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadStats({ silent: true });
+    }, 5000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [loadStats]);
+
+  // ══════════════════════════════════════════════════════
+  // الإحصائيات الرئيسية
+  // ══════════════════════════════════════════════════════
+
   const stats = useMemo(() => {
-    const totalXP = xpRows.reduce(
-      (sum, row) =>
-        sum + (row.amount ?? 0),
+    const totalStudents = data.profiles.filter(
+      (profile) => !profile.is_admin
+    ).length;
+
+    const totalAdmins = data.profiles.filter(
+      (profile) => profile.is_admin === true
+    ).length;
+
+    const totalXP = data.xpRows.reduce(
+      (sum, row) => sum + (row.amount ?? 0),
       0
     );
 
     const completedLessons =
-      lessonProgress.length;
+      data.lessonProgress.length;
 
     const completedQuizzes =
-      quizAttempts.length;
+      data.quizAttempts.length;
 
     const averageQuizScore =
       completedQuizzes > 0
         ? Math.round(
-            quizAttempts.reduce(
+            data.quizAttempts.reduce(
               (sum, attempt) =>
                 sum + (attempt.score ?? 0),
               0
@@ -501,56 +594,37 @@ export default function AdminStatsPage() {
           )
         : 0;
 
-    // Only count actual students as active.
-    const studentIds = new Set(
-      profiles
-        .filter(
-          (profile) => !profile.is_admin
-        )
-        .map((profile) => profile.id)
-    );
-
-    const activeUserIds = new Set<string>();
-
-    xpRows.forEach((row) => {
-      if (studentIds.has(row.user_id)) {
-        activeUserIds.add(row.user_id);
-      }
-    });
-
-    lessonProgress.forEach((row) => {
-      if (studentIds.has(row.user_id)) {
-        activeUserIds.add(row.user_id);
-      }
-    });
-
-    quizAttempts.forEach((row) => {
-      if (studentIds.has(row.user_id)) {
-        activeUserIds.add(row.user_id);
-      }
-    });
-
     const uniqueActiveStudents =
-      activeUserIds.size;
+      new Set([
+        ...data.xpRows.map(
+          (row) => row.user_id
+        ),
+        ...data.lessonProgress.map(
+          (row) => row.user_id
+        ),
+        ...data.quizAttempts.map(
+          (row) => row.user_id
+        ),
+      ]).size;
 
-    const totalReels = reels.length;
+    const totalReels = data.reels.length;
 
     const publishedReels =
-      reels.filter(
+      data.reels.filter(
         (reel) => reel.is_published
       ).length;
 
-    const totalViews = reels.reduce(
+    const totalViews = data.reels.reduce(
       (sum, reel) =>
         sum + (reel.views_count ?? 0),
       0
     );
 
     const totalLikes =
-      reelLikes.length;
+      data.reelLikes.length;
 
     const totalComments =
-      reelComments.length;
+      data.reelComments.length;
 
     return {
       totalStudents,
@@ -566,31 +640,22 @@ export default function AdminStatsPage() {
       totalLikes,
       totalComments,
     };
-  }, [
-    totalStudents,
-    totalAdmins,
-    profiles,
-    xpRows,
-    lessonProgress,
-    quizAttempts,
-    reels,
-    reelLikes,
-    reelComments,
-  ]);
+  }, [data]);
 
-  // -----------------------------------------
-  // Top students
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+  // أفضل الطلاب
+  // ══════════════════════════════════════════════════════
+
   const topStudents = useMemo(() => {
     const xpMap: Record<string, number> = {};
 
-    xpRows.forEach((row) => {
+    data.xpRows.forEach((row) => {
       xpMap[row.user_id] =
         (xpMap[row.user_id] ?? 0) +
         (row.amount ?? 0);
     });
 
-    return profiles
+    return data.profiles
       .filter(
         (profile) => !profile.is_admin
       )
@@ -598,19 +663,18 @@ export default function AdminStatsPage() {
         ...profile,
         xp: xpMap[profile.id] ?? 0,
       }))
-      .sort(
-        (a, b) => b.xp - a.xp
-      )
+      .sort((a, b) => b.xp - a.xp)
       .slice(0, 5);
-  }, [profiles, xpRows]);
+  }, [data.profiles, data.xpRows]);
 
-  // -----------------------------------------
-  // Stream statistics
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+  // توزيع الطلاب حسب الشعبة
+  // ══════════════════════════════════════════════════════
+
   const streamStats = useMemo(() => {
     const map: Record<string, number> = {};
 
-    profiles
+    data.profiles
       .filter(
         (profile) => !profile.is_admin
       )
@@ -624,15 +688,14 @@ export default function AdminStatsPage() {
       });
 
     return Object.entries(map)
-      .sort(
-        (a, b) => b[1] - a[1]
-      )
+      .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
-  }, [profiles]);
+  }, [data.profiles]);
 
-  // -----------------------------------------
-  // Quiz statistics
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+  // إحصائيات الاختبارات
+  // ══════════════════════════════════════════════════════
+
   const quizStats = useMemo(() => {
     const map: Record<
       string,
@@ -642,7 +705,7 @@ export default function AdminStatsPage() {
       }
     > = {};
 
-    quizAttempts.forEach((attempt) => {
+    data.quizAttempts.forEach((attempt) => {
       if (!map[attempt.quiz_id]) {
         map[attempt.quiz_id] = {
           attempts: 0,
@@ -657,8 +720,8 @@ export default function AdminStatsPage() {
     });
 
     return Object.entries(map)
-      .map(([quizId, data]) => {
-        const quiz = quizzes.find(
+      .map(([quizId, quizData]) => {
+        const quiz = data.quizzes.find(
           (item) => item.id === quizId
         );
 
@@ -667,12 +730,12 @@ export default function AdminStatsPage() {
           title:
             quiz?.title ??
             "اختبار غير معروف",
-          attempts: data.attempts,
+          attempts: quizData.attempts,
           average:
-            data.attempts > 0
+            quizData.attempts > 0
               ? Math.round(
-                  data.totalScore /
-                    data.attempts
+                  quizData.totalScore /
+                    quizData.attempts
                 )
               : 0,
         };
@@ -682,32 +745,27 @@ export default function AdminStatsPage() {
           b.attempts - a.attempts
       )
       .slice(0, 5);
-  }, [quizAttempts, quizzes]);
+  }, [data.quizAttempts, data.quizzes]);
 
-  // -----------------------------------------
-  // Reel statistics
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+  // إحصائيات الريلز
+  // ══════════════════════════════════════════════════════
+
   const reelStats = useMemo(() => {
-    const likesMap: Record<string, number> =
-      {};
+    const likesMap: Record<string, number> = {};
+    const commentsMap: Record<string, number> = {};
 
-    const commentsMap: Record<
-      string,
-      number
-    > = {};
-
-    reelLikes.forEach((like) => {
+    data.reelLikes.forEach((like) => {
       likesMap[like.reel_id] =
         (likesMap[like.reel_id] ?? 0) + 1;
     });
 
-    reelComments.forEach((comment) => {
+    data.reelComments.forEach((comment) => {
       commentsMap[comment.reel_id] =
-        (commentsMap[comment.reel_id] ?? 0) +
-        1;
+        (commentsMap[comment.reel_id] ?? 0) + 1;
     });
 
-    const reelsWithStats = reels.map(
+    const reelsWithStats = data.reels.map(
       (reel) => ({
         ...reel,
         likes:
@@ -742,14 +800,15 @@ export default function AdminStatsPage() {
       mostCommented,
     };
   }, [
-    reels,
-    reelLikes,
-    reelComments,
+    data.reels,
+    data.reelLikes,
+    data.reelComments,
   ]);
 
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
   // Loading
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+
   if (loading) {
     return (
       <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
@@ -757,34 +816,31 @@ export default function AdminStatsPage() {
           <div className="h-10 w-56 animate-pulse rounded-lg bg-white/10" />
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[1, 2, 3, 4].map(
-              (item) => (
-                <div
-                  key={item}
-                  className="h-32 animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
-                />
-              )
-            )}
+            {[1, 2, 3, 4].map((item) => (
+              <div
+                key={item}
+                className="h-32 animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
+              />
+            ))}
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            {[1, 2].map(
-              (item) => (
-                <div
-                  key={item}
-                  className="h-80 animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
-                />
-              )
-            )}
+            {[1, 2].map((item) => (
+              <div
+                key={item}
+                className="h-80 animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
+              />
+            ))}
           </div>
         </div>
       </main>
     );
   }
 
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
   // Error
-  // -----------------------------------------
+  // ══════════════════════════════════════════════════════
+
   if (error) {
     return (
       <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
@@ -810,18 +866,30 @@ export default function AdminStatsPage() {
             </p>
 
             <button
+              type="button"
               onClick={() =>
-                loadStats(true)
+                void loadStats()
               }
               className="mt-5 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-200 transition hover:bg-red-500/30"
             >
               المحاولة مرة أخرى
             </button>
+
+            <Link
+              href="/login"
+              className="mt-3 block text-sm text-slate-400 underline hover:text-white"
+            >
+              الذهاب إلى تسجيل الدخول
+            </Link>
           </div>
         </div>
       </main>
     );
   }
+
+  // ══════════════════════════════════════════════════════
+  // الصفحة
+  // ══════════════════════════════════════════════════════
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
@@ -839,7 +907,17 @@ export default function AdminStatsPage() {
           <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">
-                📊 ANALYTICS
+                <span
+                  className={
+                    isRealtimeConnected
+                      ? "h-2 w-2 rounded-full bg-emerald-400"
+                      : "h-2 w-2 rounded-full bg-amber-400"
+                  }
+                />
+
+                {isRealtimeConnected
+                  ? "LIVE ANALYTICS"
+                  : "ANALYTICS"}
               </div>
 
               <h1 className="text-3xl font-bold md:text-4xl">
@@ -847,19 +925,31 @@ export default function AdminStatsPage() {
               </h1>
 
               <p className="mt-2 text-sm text-slate-500">
-                نظرة عامة على نشاط طلاب MARIS ACADEMY.
+                البيانات مأخوذة مباشرة من قاعدة بيانات MARIS ACADEMY.
               </p>
+
+              {lastUpdated && (
+                <p className="mt-2 text-xs text-slate-600">
+                  آخر تحديث:{" "}
+                  {lastUpdated.toLocaleTimeString(
+                    "ar-DZ"
+                  )}
+                  {" · "}
+                  تحديث تلقائي كل 5 ثوانٍ
+                </p>
+              )}
             </div>
 
             <button
+              type="button"
               onClick={() =>
-                loadStats(true)
+                void loadStats()
               }
               disabled={refreshing}
               className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {refreshing
-                ? "⟳ جاري التحديث..."
+                ? "جارٍ التحديث…"
                 : "↻ تحديث البيانات"}
             </button>
           </div>
@@ -885,7 +975,7 @@ export default function AdminStatsPage() {
             icon="📚"
             label="الدروس المكتملة"
             value={stats.completedLessons}
-            description={`${totalLessons} درس متاح`}
+            description={`${data.totalLessons} درس متاح`}
           />
 
           <StatCard
@@ -947,7 +1037,7 @@ export default function AdminStatsPage() {
             reel={reelStats.mostViewed}
             value={
               reelStats.mostViewed
-                ? `${reelStats.mostViewed.views_count} مشاهدة`
+                ? `${reelStats.mostViewed.views_count ?? 0} مشاهدة`
                 : "لا توجد بيانات"
             }
           />
@@ -977,6 +1067,8 @@ export default function AdminStatsPage() {
 
         {/* Learning Overview */}
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
+
+          {/* Streams */}
           <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
             <div className="mb-6">
               <p className="text-xs text-cyan-300">
@@ -1035,6 +1127,7 @@ export default function AdminStatsPage() {
             )}
           </section>
 
+          {/* Top Students */}
           <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
             <div className="mb-6">
               <p className="text-xs text-amber-300">
@@ -1144,8 +1237,7 @@ export default function AdminStatsPage() {
               </h2>
 
               <p className="mt-2 text-sm text-slate-500">
-                هذه الإحصائيات مبنية مباشرة على البيانات
-                الحقيقية الموجودة في Supabase.
+                هذه الإحصائيات مبنية مباشرة على البيانات الحقيقية الموجودة في Supabase.
               </p>
             </div>
 
@@ -1156,13 +1248,13 @@ export default function AdminStatsPage() {
               />
 
               <MiniStat
-                label="XP"
-                value={stats.totalXP}
+                label="المشرفون"
+                value={stats.totalAdmins}
               />
 
               <MiniStat
-                label="الريلز"
-                value={stats.totalReels}
+                label="XP"
+                value={stats.totalXP}
               />
             </div>
           </div>
@@ -1172,9 +1264,9 @@ export default function AdminStatsPage() {
   );
 }
 
-// ==========================================
-// Helpers
-// ==========================================
+// ══════════════════════════════════════════════════════
+// Components
+// ══════════════════════════════════════════════════════
 
 function getFullName(profile: Profile) {
   const name =

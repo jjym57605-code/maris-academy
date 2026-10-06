@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 
 type Review = {
@@ -68,9 +69,7 @@ export default function AboutPage() {
 
     try {
       const {
-        data: {
-          user,
-        },
+        data: { user },
       } = await supabase.auth.getUser();
 
       const { data: approvedReviews } = await supabase
@@ -122,9 +121,7 @@ export default function AboutPage() {
 
     try {
       const {
-        data: {
-          user,
-        },
+        data: { user },
       } = await supabase.auth.getUser();
 
       if (!user) {
@@ -171,6 +168,17 @@ export default function AboutPage() {
 
   return (
     <div className="space-y-8 pb-8">
+      {/* Home navigation */}
+      <div>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-bold text-foam/70 transition-all duration-300 hover:border-cyan-400/20 hover:bg-cyan-400/5 hover:text-cyan-300"
+        >
+          <span>→</span>
+          العودة إلى الصفحة الرئيسية
+        </Link>
+      </div>
+
       {/* Hero */}
       <section className="relative overflow-hidden rounded-[2rem] border border-cyan-400/10 bg-gradient-to-br from-ocean-500/15 via-navy-900/80 to-cyan-400/5 p-6 shadow-glow sm:p-8">
         <div className="absolute -left-20 -top-20 h-48 w-48 rounded-full bg-cyan-400/10 blur-3xl" />
@@ -196,6 +204,7 @@ export default function AboutPage() {
       <section className="glass-card p-6 sm:p-8">
         <div className="mb-6">
           <span className="text-3xl">🌊</span>
+
           <h2 className="mt-3 text-2xl font-extrabold text-white">
             من نحن؟
           </h2>
@@ -360,9 +369,7 @@ export default function AboutPage() {
           </div>
 
           {reviews.length > 0 && (
-            <div className="badge">
-              {reviews.length} تقييم
-            </div>
+            <div className="badge">{reviews.length} تقييم</div>
           )}
         </div>
 

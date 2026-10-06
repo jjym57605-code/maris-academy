@@ -10,6 +10,7 @@ type Lesson = {
   course_id: string;
   title: string;
   content: string | null;
+  video_url: string | null;
   resources: unknown[];
   order_index: number;
   created_at: string;
@@ -26,6 +27,7 @@ type Course = {
 
 type LessonForm = {
   title: string;
+  video_url: string;
   content: string;
   order_index: string;
   resources: string;
@@ -33,6 +35,7 @@ type LessonForm = {
 
 const emptyForm: LessonForm = {
   title: "",
+  video_url: "",
   content: "",
   order_index: "1",
   resources: "[]",
@@ -92,7 +95,7 @@ export default function AdminCourseLessonsPage() {
         supabase
           .from("lessons")
           .select(
-            "id, course_id, title, content, resources, order_index, created_at"
+            "id, course_id, title, content, video_url, resources, order_index, created_at"
           )
           .eq("course_id", courseId)
           .order("order_index", { ascending: true }),
@@ -137,6 +140,7 @@ export default function AdminCourseLessonsPage() {
 
     setForm({
       title: lesson.title,
+      video_url: lesson.video_url ?? "",
       content: lesson.content ?? "",
       order_index: String(lesson.order_index),
       resources: JSON.stringify(lesson.resources ?? [], null, 2),
@@ -174,10 +178,7 @@ export default function AdminCourseLessonsPage() {
 
     const orderIndex = Number(form.order_index);
 
-    if (
-      !Number.isInteger(orderIndex) ||
-      orderIndex < 1
-    ) {
+    if (!Number.isInteger(orderIndex) || orderIndex < 1) {
       setError("رقم ترتيب الدرس غير صالح");
       return;
     }
@@ -194,9 +195,7 @@ export default function AdminCourseLessonsPage() {
 
       parsedResources = parsed;
     } catch {
-      setError(
-        'صيغة Resources غير صحيحة. مثال صحيح: []'
-      );
+      setError('صيغة Resources غير صحيحة. مثال صحيح: []');
       return;
     }
 
@@ -206,6 +205,7 @@ export default function AdminCourseLessonsPage() {
       const payload = {
         course_id: courseId,
         title: form.title.trim(),
+        video_url: form.video_url.trim() || null,
         content: form.content.trim() || null,
         resources: parsedResources,
         order_index: orderIndex,
@@ -216,6 +216,7 @@ export default function AdminCourseLessonsPage() {
           .from("lessons")
           .update({
             title: payload.title,
+            video_url: payload.video_url,
             content: payload.content,
             resources: payload.resources,
             order_index: payload.order_index,
@@ -223,7 +224,7 @@ export default function AdminCourseLessonsPage() {
           .eq("id", editingLesson.id)
           .eq("course_id", courseId)
           .select(
-            "id, course_id, title, content, resources, order_index, created_at"
+            "id, course_id, title, content, video_url, resources, order_index, created_at"
           )
           .single();
 
@@ -248,7 +249,7 @@ export default function AdminCourseLessonsPage() {
           .from("lessons")
           .insert(payload)
           .select(
-            "id, course_id, title, content, resources, order_index, created_at"
+            "id, course_id, title, content, video_url, resources, order_index, created_at"
           )
           .single();
 
@@ -410,7 +411,7 @@ export default function AdminCourseLessonsPage() {
             onClick={openCreateModal}
             className="rounded-2xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-300"
           >
-            ➕ إضافة درس
+            ➕ إضافة درس فيديو
           </button>
         </div>
       </div>
@@ -439,21 +440,21 @@ export default function AdminCourseLessonsPage() {
       {/* Lessons */}
       {lessons.length === 0 ? (
         <div className="rounded-3xl border border-white/5 bg-white/[0.025] px-6 py-16 text-center">
-          <div className="mb-4 text-5xl">📖</div>
+          <div className="mb-4 text-5xl">🎥</div>
 
           <h2 className="text-xl font-bold">
-            مازال ما كاش دروس
+            مازال ما كاش دروس فيديو
           </h2>
 
           <p className="mt-2 text-slate-500">
-            أضف أول درس لهذا الكورس.
+            أضف أول درس فيديو لهذا الكورس.
           </p>
 
           <button
             onClick={openCreateModal}
             className="mt-6 rounded-xl bg-cyan-400 px-5 py-3 font-bold text-slate-950"
           >
-            ➕ إضافة أول درس
+            ➕ إضافة أول درس فيديو
           </button>
         </div>
       ) : (
@@ -471,9 +472,17 @@ export default function AdminCourseLessonsPage() {
 
                 {/* Info */}
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-lg font-bold">
-                    {lesson.title}
-                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-bold">
+                      {lesson.title}
+                    </h2>
+
+                    {lesson.video_url && (
+                      <span className="rounded-full bg-cyan-400/10 px-2.5 py-1 text-xs font-semibold text-cyan-300">
+                        🎥 فيديو
+                      </span>
+                    )}
+                  </div>
 
                   <p className="mt-1 text-xs text-slate-500">
                     ترتيب الدرس: {lesson.order_index}
@@ -481,12 +490,29 @@ export default function AdminCourseLessonsPage() {
 
                   <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">
                     {lesson.content ||
-                      "لا يوجد محتوى لهذا الدرس حاليًا."}
+                      "لا يوجد وصف لهذا الدرس حاليًا."}
                   </p>
+
+                  {lesson.video_url && (
+                    <p className="mt-2 truncate text-xs text-cyan-400/70" dir="ltr">
+                      {lesson.video_url}
+                    </p>
+                  )}
                 </div>
 
                 {/* Actions */}
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  {lesson.video_url && (
+                    <a
+                      href={lesson.video_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-xl border border-cyan-400/10 bg-cyan-400/5 px-4 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/10"
+                    >
+                      ▶️ مشاهدة
+                    </a>
+                  )}
+
                   <button
                     onClick={() =>
                       openEditModal(lesson)
@@ -520,7 +546,7 @@ export default function AdminCourseLessonsPage() {
                 <h2 className="text-2xl font-bold">
                   {editingLesson
                     ? "✏️ تعديل الدرس"
-                    : "➕ إضافة درس"}
+                    : "➕ إضافة درس فيديو"}
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
@@ -552,6 +578,27 @@ export default function AdminCourseLessonsPage() {
                 />
               </Field>
 
+              {/* Video URL */}
+              <Field label="رابط الفيديو">
+                <input
+                  type="url"
+                  value={form.video_url}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      video_url: e.target.value,
+                    })
+                  }
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="input"
+                  dir="ltr"
+                />
+
+                <p className="mt-2 text-xs text-slate-500">
+                  حط رابط YouTube أو رابط فيديو مباشر.
+                </p>
+              </Field>
+
               {/* Order */}
               <Field label="ترتيب الدرس">
                 <input
@@ -570,7 +617,7 @@ export default function AdminCourseLessonsPage() {
               </Field>
 
               {/* Content */}
-              <Field label="محتوى الدرس">
+              <Field label="وصف / محتوى الدرس">
                 <textarea
                   value={form.content}
                   onChange={(e) =>
@@ -579,8 +626,8 @@ export default function AdminCourseLessonsPage() {
                       content: e.target.value,
                     })
                   }
-                  placeholder="اكتب محتوى الدرس هنا..."
-                  rows={12}
+                  placeholder="اكتب وصف الدرس وما سيتعلمه الطالب..."
+                  rows={8}
                   className="input resize-y"
                 />
               </Field>

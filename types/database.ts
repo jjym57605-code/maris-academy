@@ -37,6 +37,7 @@ export interface Lesson {
   course_id: string;
   title: string;
   content: string | null;
+  video_url: string | null;
   resources: LessonResource[];
   order_index: number;
   created_at: string;

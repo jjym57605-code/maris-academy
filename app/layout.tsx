@@ -96,16 +96,25 @@ export const viewport: Viewport = {
   themeColor: "#020b18",
 };
 
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ar" dir="rtl">
+      <head>
+        <meta
+          name="google-site-verification"
+          content="vY8Qs4Coc8ayudp_wgNssXcdXdtsqTG1DWQf_HyLhRs"
+        />
+      </head>
       <body className={`${tajawal.variable} ${grotesk.variable}`}>
         {children}
       </body>
     </html>
   );
 }
+
+
 
 

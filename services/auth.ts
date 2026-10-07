@@ -115,6 +115,15 @@ export async function getSession(
     error,
   } = await supabase.auth.getSession();
 
+  console.log("=== SUPABASE SESSION CHECK ===");
+  console.log("HAS SESSION:", Boolean(session));
+  console.log("USER ID:", session?.user?.id ?? null);
+  console.log(
+    "ACCESS TOKEN EXISTS:",
+    Boolean(session?.access_token)
+  );
+  console.log("SESSION ERROR:", error);
+
   if (error) {
     throw error;
   }
@@ -212,7 +221,6 @@ export async function ensureProfile(
 
   return profile;
 }
-
 
 
 

@@ -18,12 +18,12 @@ const ADMIN_ITEMS = [
     href: "/admin/reels",
     active: true,
   },
- {
-  label: "الدورات",
-  icon: "📚",
-  href: "/admin/courses",
-  active: true,
-},
+  {
+    label: "الدورات",
+    icon: "📚",
+    href: "/admin/courses",
+    active: true,
+  },
   {
     label: "مكتبة الدروس",
     icon: "📖",
@@ -37,11 +37,11 @@ const ADMIN_ITEMS = [
     active: true,
   },
   {
-  label: "آراء الطلبة",
-  icon: "💬",
-  href: "/admin/reviews",
-  active: true,
-},
+    label: "آراء الطلبة",
+    icon: "💬",
+    href: "/admin/reviews",
+    active: true,
+  },
   {
     label: "الإنجازات",
     icon: "🏆",
@@ -54,6 +54,18 @@ const ADMIN_ITEMS = [
     href: "/admin/quizzes",
     active: true,
   },
+  {
+    label: "المنتدى",
+    icon: "💬",
+    href: "/admin/forum",
+    active: true,
+  },
+  {
+  label: "الإعلانات",
+  icon: "📢",
+  href: "/admin/announcements",
+  active: true,
+},
   {
     label: "الإحصائيات",
     icon: "📊",
@@ -183,5 +195,3 @@ export default function AdminLayout({
     </div>
   );
 }
-
-

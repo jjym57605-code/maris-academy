@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -13,6 +14,7 @@ type Stats = {
   reels: number;
   achievements: number;
   reviews: number;
+  forumPosts: number;
 };
 
 type RecentStudent = {
@@ -48,6 +50,7 @@ export default function AdminPage() {
     reels: 0,
     achievements: 0,
     reviews: 0,
+    forumPosts: 0,
   });
 
   const [recentStudents, setRecentStudents] = useState<RecentStudent[]>(
@@ -90,6 +93,7 @@ export default function AdminPage() {
         reelsResult,
         achievementsResult,
         reviewsResult,
+        forumPostsResult,
       ] = await Promise.all([
         supabase.rpc("get_admin_students"),
 
@@ -115,6 +119,10 @@ export default function AdminPage() {
 
         supabase
           .from("platform_reviews")
+          .select("id", { count: "exact", head: true }),
+
+        supabase
+          .from("forum_posts")
           .select("id", { count: "exact", head: true }),
       ]);
 
@@ -146,6 +154,10 @@ export default function AdminPage() {
         throw reviewsResult.error;
       }
 
+      if (forumPostsResult.error) {
+        throw forumPostsResult.error;
+      }
+
       const allStudents =
         (adminStudentsResult.data ?? []) as AdminStudent[];
 
@@ -157,6 +169,7 @@ export default function AdminPage() {
         reels: reelsResult.count ?? 0,
         achievements: achievementsResult.count ?? 0,
         reviews: reviewsResult.count ?? 0,
+        forumPosts: forumPostsResult.count ?? 0,
       });
 
       setRecentStudents(
@@ -334,6 +347,14 @@ export default function AdminPage() {
               href="/admin/reviews"
               accent="yellow"
             />
+
+            <StatCard
+              icon="💬"
+              title="منشورات المنتدى"
+              value={stats.forumPosts}
+              href="/admin/forum"
+              accent="cyan"
+            />
           </div>
         </section>
 
@@ -390,6 +411,12 @@ export default function AdminPage() {
               href="/admin/reviews"
               icon="⭐"
               title="مراجعة آراء الطلبة"
+            />
+
+            <QuickAction
+              href="/admin/forum"
+              icon="💬"
+              title="إدارة المنتدى"
             />
 
             <QuickAction
@@ -609,5 +636,7 @@ function QuickAction({
     </Link>
   );
 }
+
+
 
 

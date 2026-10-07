@@ -1,411 +1,890 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { getSupabase } from "@/lib/supabase";
-import { ensureProfile } from "@/services/auth";
-import { getStudentStats, type StudentStats } from "@/services/stats";
+
+import {
+  getSession,
+  getProfile,
+  type Profile,
+} from "@/services/auth";
+
 import {
   getNextLesson,
   listCoursesWithProgress,
   type CourseWithMeta,
 } from "@/services/courses";
-import { getRecentAttempts, type AttemptWithQuiz } from "@/services/quizzes";
-import { getLevelInfo } from "@/lib/level";
-import { formatDateAr } from "@/lib/utils";
-
-import type { Course, Lesson, Profile } from "@/types/database";
 
 import {
-  EmptyState,
-  ErrorState,
-  GlassCard,
-  ProgressBar,
-  Spinner,
-} from "@/components/ui";
+  getActiveAnnouncements,
+  type Announcement,
+} from "@/services/announcements";
 
-interface DashboardData {
-  profile: Profile | null;
-  stats: StudentStats;
-  next: { lesson: Lesson; course: Course | null } | null;
-  attempts: AttemptWithQuiz[];
-  courses: CourseWithMeta[];
-}
+import type {
+  Course,
+  Lesson,
+} from "@/types/database";
+
+type NextLessonData = {
+  lesson: Lesson;
+  course: Course | null;
+};
 
 export default function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    const supabase = getSupabase();
+  const [profile, setProfile] =
+    useState<Profile | null>(null);
 
-    if (!supabase) {
-      console.error("SUPABASE CLIENT NOT AVAILABLE");
-      setError(true);
-      return;
-    }
+  const [announcements, setAnnouncements] =
+    useState<Announcement[]>([]);
 
-    setError(false);
+  const [nextLesson, setNextLesson] =
+    useState<NextLessonData | null>(null);
 
-    try {
-      // ================================
-      // AUTH USER
-      // ================================
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+  const [courses, setCourses] =
+    useState<CourseWithMeta[]>([]);
 
-      console.log("AUTH USER ID:", user?.id);
-
-      if (authError) {
-        console.error("AUTH ERROR:", authError);
-        throw authError;
-      }
-
-      if (!user) {
-        console.error("NO AUTH USER FOUND");
-        setError(true);
-        return;
-      }
-
-      // ================================
-      // LOAD DASHBOARD DATA
-      // ================================
-      const [profile, stats, next, attempts, courses] = await Promise.all([
-        ensureProfile(supabase, user),
-        getStudentStats(supabase, user.id),
-        getNextLesson(supabase, user.id),
-        getRecentAttempts(supabase, user.id),
-        listCoursesWithProgress(supabase, user.id),
-      ]);
-
-      console.log("PROFILE:", profile);
-      console.log("STATS:", stats);
-      console.log("NEXT LESSON:", next);
-      console.log("ATTEMPTS:", attempts);
-      console.log("COURSES:", courses);
-
-      setData({
-        profile,
-        stats,
-        next,
-        attempts,
-        courses,
-      });
-    } catch (err) {
-      console.error("DASHBOARD LOAD ERROR:", err);
-      setError(true);
-    }
-  }, []);
+  const [error, setError] =
+    useState<string | null>(null);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let mounted = true;
 
-  if (error) {
-    return <ErrorState onRetry={load} />;
+    async function loadDashboard() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const supabase = getSupabase();
+
+        if (!supabase) {
+          throw new Error(
+            "تعذر الاتصال بقاعدة البيانات."
+          );
+        }
+
+        /* =========================
+           SESSION
+        ========================== */
+
+        const session = await getSession(
+          supabase
+        );
+
+        if (!session?.user) {
+          throw new Error(
+            "يجب تسجيل الدخول أولًا."
+          );
+        }
+
+        const userId = session.user.id;
+
+        /* =========================
+           PROFILE
+        ========================== */
+
+        const profileData =
+          await getProfile(
+            supabase,
+            userId
+          );
+
+        /* =========================
+           DATA
+        ========================== */
+
+        const [
+          announcementsData,
+          nextLessonData,
+          coursesData,
+        ] = await Promise.all([
+          getActiveAnnouncements(),
+
+          getNextLesson(
+            supabase,
+            userId
+          ),
+
+          listCoursesWithProgress(
+            supabase,
+            userId,
+            profileData?.stream ?? null
+          ),
+        ]);
+
+        if (!mounted) return;
+
+        setProfile(profileData);
+
+        setAnnouncements(
+          announcementsData ?? []
+        );
+
+        setNextLesson(
+          nextLessonData
+        );
+
+        setCourses(
+          coursesData ?? []
+        );
+      } catch (err) {
+        console.error(
+          "Dashboard loading error:",
+          err
+        );
+
+        if (!mounted) return;
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : "حدث خطأ أثناء تحميل لوحة التحكم."
+        );
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDashboard();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /* =====================================================
+     LOADING
+  ===================================================== */
+
+  if (loading) {
+    return (
+      <main
+        dir="rtl"
+        className="px-4 py-6 sm:px-6 lg:px-8"
+      >
+        <div className="mx-auto max-w-7xl space-y-6">
+          <div className="animate-pulse space-y-6">
+
+            <div className="h-40 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="h-32 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+              <div className="h-32 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+              <div className="h-32 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+            </div>
+
+            <div className="h-56 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              <div className="h-64 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+              <div className="h-64 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+              <div className="h-64 rounded-3xl border border-cyan-400/10 bg-slate-900/60" />
+            </div>
+
+          </div>
+        </div>
+      </main>
+    );
   }
 
-  if (!data) {
-    return <Spinner />;
-  }
+  /* =====================================================
+     STATS
+  ===================================================== */
 
-  const { profile, stats, next, attempts, courses } = data;
+  const totalLessons = courses.reduce(
+    (sum, course) =>
+      sum + Number(course.lessonsCount ?? 0),
+    0
+  );
 
-  const level = getLevelInfo(stats.totalXP);
+  const completedLessons = courses.reduce(
+    (sum, course) =>
+      sum + Number(course.completedLessons ?? 0),
+    0
+  );
 
-  const hasActivity =
-    stats.completedLessons > 0 || attempts.length > 0;
+  const progressPercentage =
+    totalLessons > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (completedLessons /
+              totalLessons) *
+              100
+          )
+        )
+      : 0;
 
-  const firstName = profile?.first_name?.trim();
+  const firstName =
+    profile?.first_name?.trim() || "طالب";
 
-  const statCards = [
-    {
-      icon: "⭐",
-      label: "نقاط الخبرة",
-      value: `${stats.totalXP} XP`,
-    },
-    {
-      icon: "🏆",
-      label: "المستوى",
-      value: `${level.level} — ${level.name}`,
-    },
-    {
-      icon: "🔥",
-      label: "سلسلة الدراسة",
-      value:
-        stats.streak > 0
-          ? `${stats.streak} ${
-              stats.streak === 1
-                ? "يوم"
-                : stats.streak === 2
-                ? "يومان"
-                : "أيام"
-            }`
-          : "0 أيام",
-    },
-    {
-      icon: "📊",
-      label: "نسبة التقدم",
-      value:
-        stats.progressPercent !== null
-          ? `${stats.progressPercent}%`
-          : "0%",
-    },
-  ];
+  /* =====================================================
+     UI
+  ===================================================== */
 
   return (
-    <div className="space-y-8">
+    <main
+      dir="rtl"
+      className="px-4 py-6 sm:px-6 lg:px-8"
+    >
+      <div className="mx-auto max-w-7xl space-y-8">
 
-      {/* ================================
-          الترحيب
-      ================================= */}
+        {/* =================================================
+            HERO
+        ================================================= */}
 
-      <header className="animate-fade-up">
-        <h1 className="page-title">
-          لوحة الطالب
-        </h1>
+        <section className="relative overflow-hidden rounded-3xl border border-cyan-400/15 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-2xl shadow-cyan-950/20 sm:p-8">
 
-        <p className="mt-3 text-xl font-bold text-foam/90">
-          مرحباً{firstName ? `، ${firstName}` : ""} 👋
-        </p>
+          <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
 
-        <p className="mt-1 text-foam/60">
-          استمر في التقدم، خطوة كل يوم تصنع الفرق.
-        </p>
-      </header>
+          <div className="pointer-events-none absolute -bottom-32 -right-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
-      {/* ================================
-          الإحصائيات
-      ================================= */}
+          <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
 
-      <section
-        className="grid grid-cols-2 gap-4 lg:grid-cols-4"
-        aria-label="إحصائيات الطالب"
-      >
-        {statCards.map((card, i) => (
-          <GlassCard
-            key={card.label}
-            className="animate-fade-up p-5"
-            hover
-          >
-            <div
-              className="flex flex-col gap-2"
-              style={{
-                animationDelay: `${i * 60}ms`,
-              }}
-            >
-              <span
-                className="text-2xl"
-                aria-hidden
-              >
-                {card.icon}
-              </span>
+            <div>
 
-              <p className="break-words text-lg font-extrabold leading-snug text-white sm:text-xl">
-                {card.value}
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-200 backdrop-blur">
+                🌊 MARIS ACADEMY ²⁰²⁷
+              </div>
+
+              <h1 className="text-2xl font-black tracking-tight text-white sm:text-3xl lg:text-4xl">
+                مرحبًا {firstName} 👋
+              </h1>
+
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+                مرحبًا بك في لوحة التحكم الخاصة بك.
+                تابع دروسك وتقدمك وآخر أخبار الأكاديمية
+                استعدادًا لـ BAC 2027.
               </p>
 
-              <p className="text-sm text-foam/50">
-                {card.label}
-              </p>
             </div>
-          </GlassCard>
-        ))}
-      </section>
 
-      {/* ================================
-          لا يوجد نشاط
-      ================================= */}
-
-      {!hasActivity && (
-        <EmptyState
-          icon="🌊"
-          title="ابدأ أول درس لك لتبدأ رحلتك التعليمية."
-          action={
-            <Link
-              href="/library"
-              className="btn-primary"
-            >
-              استكشف الدروس
-            </Link>
-          }
-        />
-      )}
-
-      {/* ================================
-          تابع التعلم + التحديات
-      ================================= */}
-
-      <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        <GlassCard className="p-6" hover>
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold text-white">
-            <span aria-hidden>▶️</span>
-            تابع التعلم
-          </h2>
-
-          {next ? (
-            <div className="space-y-3">
-
-              <p className="text-sm text-foam/50">
-                {next.course?.title ?? "دورة تعليمية"}
-              </p>
-
-              <p className="text-xl font-bold text-foam">
-                {next.lesson.title}
-              </p>
+            <div className="relative flex flex-wrap gap-3">
 
               <Link
-                href={`/courses/${next.lesson.course_id}/lessons/${next.lesson.id}`}
-                className="btn-primary mt-2"
+                href="/courses"
+                className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-black text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:scale-[1.02] hover:bg-cyan-300"
               >
-                متابعة التعلم
+                📚 الدروس
+              </Link>
+
+              <Link
+                href="/progress"
+                className="rounded-2xl border border-cyan-300/20 bg-white/5 px-5 py-3 text-sm font-bold text-cyan-100 backdrop-blur transition hover:border-cyan-300/40 hover:bg-cyan-400/10"
+              >
+                📊 تقدمي
               </Link>
 
             </div>
-          ) : (
-            <p className="py-6 text-center text-foam/50">
-              لا توجد بيانات بعد.
-            </p>
-          )}
-        </GlassCard>
-
-        <GlassCard className="p-6" hover>
-          <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold text-white">
-            <span aria-hidden>⚡</span>
-            التحديات اليومية
-          </h2>
-
-          <p className="py-6 text-center text-foam/50">
-            لا توجد بيانات بعد.
-          </p>
-        </GlassCard>
-
-      </section>
-
-      {/* ================================
-          آخر الاختبارات
-      ================================= */}
-
-      <section>
-
-        <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold text-white">
-          <span aria-hidden>📝</span>
-          آخر الاختبارات
-        </h2>
-
-        {attempts.length > 0 ? (
-          <div className="space-y-3">
-
-            {attempts.map((attempt) => (
-              <GlassCard
-                key={attempt.id}
-                className="flex flex-wrap items-center justify-between gap-3 p-4"
-                hover
-              >
-                <div>
-
-                  <p className="font-bold text-foam">
-                    {attempt.quiz?.title ?? "اختبار"}
-                  </p>
-
-                  <p className="text-sm text-foam/50">
-                    {formatDateAr(attempt.completed_at)} ·{" "}
-                    {attempt.correct_answers} من{" "}
-                    {attempt.total_questions} صحيحة
-                  </p>
-
-                </div>
-
-                <span
-                  className={
-                    attempt.score >= 50
-                      ? "badge !border-teal-400/30 !bg-teal-400/10 !text-teal-300"
-                      : "badge !border-red-400/30 !bg-red-400/10 !text-red-300"
-                  }
-                >
-                  {attempt.score}%
-                </span>
-
-              </GlassCard>
-            ))}
 
           </div>
-        ) : (
-          <EmptyState
-            icon="📝"
-            title="لا توجد نتائج اختبارات بعد."
-          />
+
+        </section>
+
+        {/* =================================================
+            ERROR
+        ================================================= */}
+
+        {error && (
+          <section className="rounded-2xl border border-red-400/20 bg-red-950/30 p-4 text-sm text-red-300">
+            ⚠️ {error}
+          </section>
         )}
 
-      </section>
+        {/* =================================================
+            QUICK STATS
+        ================================================= */}
 
-      {/* ================================
-          تقدمك الدراسي
-      ================================= */}
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-      <section>
+          {/* LESSONS */}
 
-        <h2 className="mb-4 flex items-center gap-2 text-lg font-extrabold text-white">
-          <span aria-hidden>📈</span>
-          تقدمك الدراسي
-        </h2>
+          <div className="group rounded-3xl border border-cyan-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-400/25">
 
-        {courses.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex items-center justify-between">
 
-            {courses.map((course) => (
-              <GlassCard
-                key={course.id}
-                className="space-y-3 p-5"
-                hover
-              >
+              <div>
 
-                <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium text-slate-400">
+                  الدروس المكتملة
+                </p>
+
+                <p className="mt-2 text-3xl font-black text-white">
+                  {completedLessons}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  من أصل {totalLessons} درس
+                </p>
+
+              </div>
+
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/10 bg-cyan-400/10 text-2xl">
+                📚
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* PROGRESS */}
+
+          <div className="group rounded-3xl border border-emerald-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-emerald-400/25">
+
+            <div className="flex items-center justify-between">
+
+              <div>
+
+                <p className="text-sm font-medium text-slate-400">
+                  نسبة التقدم
+                </p>
+
+                <p className="mt-2 text-3xl font-black text-white">
+                  {progressPercentage}%
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  استمر، أنت قادر 💪
+                </p>
+
+              </div>
+
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-400/10 bg-emerald-400/10 text-2xl">
+                📈
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* ANNOUNCEMENTS */}
+
+          <div className="group rounded-3xl border border-amber-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-amber-400/25 sm:col-span-2 lg:col-span-1">
+
+            <div className="flex items-center justify-between">
+
+              <div>
+
+                <p className="text-sm font-medium text-slate-400">
+                  الإعلانات الحالية
+                </p>
+
+                <p className="mt-2 text-3xl font-black text-white">
+                  {announcements.length}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  آخر أخبار الأكاديمية
+                </p>
+
+              </div>
+
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-400/10 bg-amber-400/10 text-2xl">
+                📢
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =================================================
+            ANNOUNCEMENTS
+        ================================================= */}
+
+        <section>
+
+          <div className="mb-4">
+
+            <h2 className="text-xl font-black text-slate-900">
+              📢 آخر الإعلانات
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              أهم الأخبار والتحديثات من MARIS ACADEMY
+            </p>
+
+          </div>
+
+          {announcements.length === 0 ? (
+
+            <div className="rounded-3xl border border-dashed border-cyan-400/15 bg-slate-900/60 p-8 text-center">
+
+              <div className="text-4xl">
+                📭
+              </div>
+
+              <p className="mt-3 font-bold text-slate-200">
+                لا توجد إعلانات حاليًا
+              </p>
+
+              <p className="mt-1 text-sm text-slate-500">
+                سنضع هنا آخر أخبار الأكاديمية.
+              </p>
+
+            </div>
+
+          ) : (
+
+            <div className="grid gap-5 lg:grid-cols-2">
+
+              {announcements.map(
+                (announcement) => (
+
+                  <article
+                    key={announcement.id}
+                    className="overflow-hidden rounded-3xl border border-cyan-400/10 bg-slate-900/60 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-400/25"
+                  >
+
+                    {announcement.image_url && (
+                      <div className="overflow-hidden bg-slate-950">
+
+                        <img
+                          src={announcement.image_url}
+                          alt={String(
+                            announcement.title
+                          )}
+                          className="h-auto max-h-[600px] w-full object-cover transition duration-500 hover:scale-[1.01]"
+                        />
+
+                      </div>
+                    )}
+
+                    <div className="p-5">
+
+                      <div className="flex flex-wrap items-center gap-2">
+
+                        <span className="rounded-full border border-cyan-400/10 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300">
+
+                          {announcement.type ===
+                          "course"
+                            ? "📚 دورة"
+                            : announcement.type ===
+                                "teacher"
+                              ? "👨‍🏫 أستاذ"
+                              : announcement.type ===
+                                  "update"
+                                ? "✨ تحديث"
+                                : "📢 عام"}
+
+                        </span>
+
+                        <span className="text-xs text-slate-500">
+                          {new Date(
+                            announcement.created_at
+                          ).toLocaleDateString(
+                            "ar-DZ"
+                          )}
+                        </span>
+
+                      </div>
+
+                      <h3 className="mt-4 text-lg font-black leading-8 text-slate-900">
+                        {String(
+                          announcement.title
+                        )}
+                      </h3>
+
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-600">
+                        {String(
+                          announcement.content
+                        )}
+                      </p>
+
+                    </div>
+
+                  </article>
+
+                )
+              )}
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =================================================
+            NEXT LESSON
+        ================================================= */}
+
+        <section>
+
+          <div className="mb-4">
+
+            <h2 className="text-xl font-black text-slate-900">
+              🎯 تابع من حيث توقفت
+            </h2>
+
+            <p className="mt-1 text-sm text-slate-500">
+              الدرس التالي المقترح لك
+            </p>
+
+          </div>
+
+          {nextLesson ? (
+
+            <div className="overflow-hidden rounded-3xl border border-cyan-400/10 bg-slate-900/60 shadow-xl shadow-black/10 backdrop-blur">
+
+              <div className="p-6 sm:p-7">
+
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
 
                   <div>
 
-                    <p className="text-sm text-cyan-300">
-                      {course.subject?.name ?? "مادة"}
-                    </p>
+                    <span className="inline-flex rounded-full border border-cyan-400/10 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300">
+                      الدرس التالي
+                    </span>
 
-                    <p className="font-bold text-foam">
-                      {course.title}
-                    </p>
+                    <h3 className="mt-3 text-xl font-black text-white">
+                      {String(
+                        nextLesson.lesson.title
+                      )}
+                    </h3>
+
+                    {nextLesson.course && (
+                      <p className="mt-2 text-sm text-slate-400">
+                        📚{" "}
+                        {String(
+                          nextLesson.course.title
+                        )}
+                      </p>
+                    )}
 
                   </div>
 
-                  <span className="badge shrink-0">
-                    {course.progressPercent}%
-                  </span>
+                  <Link
+                    href={`/lessons/${String(
+                      nextLesson.lesson.id
+                    )}`}
+                    className="inline-flex items-center justify-center rounded-2xl bg-cyan-400 px-6 py-3 text-sm font-black text-slate-950 shadow-lg shadow-cyan-500/10 transition hover:scale-[1.02] hover:bg-cyan-300"
+                  >
+                    متابعة الدرس →
+                  </Link>
 
                 </div>
 
-                <ProgressBar
-                  percent={course.progressPercent}
-                />
+              </div>
 
-                <p className="text-xs text-foam/40">
-                  {course.completedLessons} من{" "}
-                  {course.lessonsCount} دروس مكتملة
-                </p>
+            </div>
 
-              </GlassCard>
-            ))}
+          ) : (
+
+            <div className="rounded-3xl border border-dashed border-cyan-400/15 bg-slate-900/60 p-8 text-center">
+
+              <div className="text-4xl">
+                🎉
+              </div>
+
+              <h3 className="mt-3 font-black text-slate-200">
+                لا يوجد درس مقترح حاليًا
+              </h3>
+
+              <p className="mt-2 text-sm text-slate-500">
+                يمكنك اختيار دورة والبدء في التعلم.
+              </p>
+
+              <Link
+                href="/courses"
+                className="mt-5 inline-flex rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-300"
+              >
+                تصفح الدورات
+              </Link>
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =================================================
+            COURSES
+        ================================================= */}
+
+        <section>
+
+          <div className="mb-4 flex items-end justify-between gap-4">
+
+            <div>
+
+              <h2 className="text-xl font-black text-slate-900">
+                📚 دوراتك
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                تابع تقدمك في الدورات التعليمية
+              </p>
+
+            </div>
+
+            <Link
+              href="/courses"
+              className="text-sm font-bold text-cyan-700 transition hover:text-cyan-800"
+            >
+              عرض الكل →
+            </Link>
 
           </div>
-        ) : (
-          <EmptyState
-            icon="📈"
-            title="لا توجد بيانات بعد."
-          />
-        )}
 
-      </section>
+          {courses.length === 0 ? (
 
-    </div>
+            <div className="rounded-3xl border border-dashed border-cyan-400/15 bg-slate-900/60 p-8 text-center">
+
+              <div className="text-4xl">
+                📚
+              </div>
+
+              <p className="mt-3 font-bold text-slate-200">
+                لم تبدأ أي دورة بعد
+              </p>
+
+              <Link
+                href="/courses"
+                className="mt-5 inline-flex rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-300"
+              >
+                استكشف الدورات
+              </Link>
+
+            </div>
+
+          ) : (
+
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+
+              {courses.map((course) => {
+
+                const completed =
+                  Number(
+                    course.completedLessons ?? 0
+                  );
+
+                const total =
+                  Number(
+                    course.lessonsCount ?? 0
+                  );
+
+                const courseProgress =
+                  Math.min(
+                    100,
+                    Math.max(
+                      0,
+                      Number(
+                        course.progressPercent ?? 0
+                      )
+                    )
+                  );
+
+                return (
+                  <Link
+                    key={String(course.id)}
+                    href={`/courses/${String(
+                      course.id
+                    )}`}
+                    className="group overflow-hidden rounded-3xl border border-cyan-400/10 bg-slate-900/60 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-400/25"
+                  >
+
+                    <div className="p-5">
+
+                      <div className="flex items-start justify-between gap-4">
+
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/10 bg-cyan-400/10 text-2xl">
+                          📘
+                        </div>
+
+                        <span className="rounded-full border border-cyan-400/10 bg-slate-950/60 px-3 py-1 text-xs font-bold text-cyan-300">
+                          {courseProgress}%
+                        </span>
+
+                      </div>
+
+                      <h3 className="mt-5 line-clamp-2 text-lg font-black leading-8 text-slate-900 transition group-hover:text-cyan-700">
+                        {String(
+                          course.title
+                        )}
+                      </h3>
+
+                      {course.description && (
+                        <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                          {String(
+                            course.description
+                          )}
+                        </p>
+                      )}
+
+                      <div className="mt-5">
+
+                        <div className="mb-2 flex items-center justify-between text-xs">
+
+                          <span className="text-slate-500">
+                            التقدم
+                          </span>
+
+                          <span className="font-bold text-slate-700">
+                            {completed}/{total}
+                          </span>
+
+                        </div>
+
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all"
+                            style={{
+                              width: `${courseProgress}%`,
+                            }}
+                          />
+
+                        </div>
+
+                      </div>
+
+                      <div className="mt-5 flex items-center justify-between text-sm font-bold">
+
+                        <span className="text-slate-500">
+                          فتح الدورة
+                        </span>
+
+                        <span className="text-cyan-700 transition group-hover:translate-x-1">
+                          →
+                        </span>
+
+                      </div>
+
+                    </div>
+
+                  </Link>
+                );
+              })}
+
+            </div>
+
+          )}
+
+        </section>
+
+        {/* =================================================
+            QUICK ACTIONS
+        ================================================= */}
+
+        <section>
+
+          <div className="mb-4">
+
+            <h2 className="text-xl font-black text-slate-900">
+              ⚡ الوصول السريع
+            </h2>
+
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+            <Link
+              href="/courses"
+              className="group rounded-3xl border border-cyan-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-400/25"
+            >
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/10 text-3xl">
+                📚
+              </div>
+
+              <h3 className="mt-4 font-black text-white transition group-hover:text-cyan-300">
+                الدورات
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-400">
+                جميع الدروس والدورات
+              </p>
+
+            </Link>
+
+            <Link
+              href="/progress"
+              className="group rounded-3xl border border-emerald-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-emerald-400/25"
+            >
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/10 text-3xl">
+                📊
+              </div>
+
+              <h3 className="mt-4 font-black text-white transition group-hover:text-emerald-300">
+                تقدمي
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-400">
+                تابع مستواك وإنجازاتك
+              </p>
+
+            </Link>
+
+            <Link
+              href="/forum"
+              className="group rounded-3xl border border-violet-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-violet-400/25"
+            >
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-400/10 text-3xl">
+                💬
+              </div>
+
+              <h3 className="mt-4 font-black text-white transition group-hover:text-violet-300">
+                المنتدى
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-400">
+                ناقش وتبادل المعرفة
+              </p>
+
+            </Link>
+
+            <Link
+              href="/profile"
+              className="group rounded-3xl border border-amber-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-amber-400/25"
+            >
+
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/10 text-3xl">
+                👤
+              </div>
+
+              <h3 className="mt-4 font-black text-white transition group-hover:text-amber-300">
+                ملفي
+              </h3>
+
+              <p className="mt-1 text-sm text-slate-400">
+                معلومات حسابك
+              </p>
+
+            </Link>
+
+          </div>
+
+        </section>
+
+        {/* =================================================
+            FOOTER
+        ================================================= */}
+
+        <footer className="pb-8 pt-4 text-center">
+
+          <p className="text-xs text-slate-500">
+            🌊 MARIS ACADEMY ²⁰²⁷ — نبني مستقبل BAC 2027 معًا
+          </p>
+
+        </footer>
+
+      </div>
+    </main>
   );
 }
+
+
+
+
+
+
+
+

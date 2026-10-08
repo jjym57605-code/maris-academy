@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -155,7 +156,9 @@ export default function AboutPage() {
 
         if (error) throw error;
 
-        setMessage("تم إرسال تقييمك بنجاح. سيظهر بعد المراجعة. 💙");
+        setMessage(
+          "تم إرسال تقييمك بنجاح. سيظهر بعد المراجعة. 💙"
+        );
       }
 
       await loadReviews();
@@ -168,14 +171,14 @@ export default function AboutPage() {
 
   return (
     <div className="space-y-8 pb-8">
-      {/* Back to platform */}
+      {/* Back to homepage */}
       <div>
         <Link
-          href="/dashboard"
+          href="/"
           className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-bold text-foam/70 transition-all duration-300 hover:border-cyan-400/20 hover:bg-cyan-400/5 hover:text-cyan-300"
         >
           <span>→</span>
-          العودة إلى المنصة
+          العودة إلى الرئيسية
         </Link>
       </div>
 
@@ -319,7 +322,9 @@ export default function AboutPage() {
 
           <textarea
             value={reviewText}
-            onChange={(event) => setReviewText(event.target.value)}
+            onChange={(event) =>
+              setReviewText(event.target.value)
+            }
             placeholder="اكتب رأيك في MARIS ACADEMY..."
             maxLength={1000}
             rows={5}
@@ -369,7 +374,9 @@ export default function AboutPage() {
           </div>
 
           {reviews.length > 0 && (
-            <div className="badge">{reviews.length} تقييم</div>
+            <div className="badge">
+              {reviews.length} تقييم
+            </div>
           )}
         </div>
 
@@ -441,7 +448,9 @@ export default function AboutPage() {
               className="group rounded-3xl border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:border-cyan-400/25 hover:bg-white/[0.06] hover:shadow-glow"
             >
               <div className="flex items-center justify-between">
-                <span className="text-3xl">{social.icon}</span>
+                <span className="text-3xl">
+                  {social.icon}
+                </span>
 
                 <span className="text-foam/30 transition-transform duration-300 group-hover:-translate-x-1 group-hover:text-cyan-300">
                   ←
@@ -498,3 +507,4 @@ export default function AboutPage() {
     </div>
   );
 }
+

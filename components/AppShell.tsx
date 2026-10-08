@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { Session } from "@supabase/supabase-js";
+import type { Session, SupabaseClient } from "@supabase/supabase-js";
 
 import {
   getSupabase,
@@ -125,6 +125,72 @@ export default function AppShell({
     useState(false);
 
   // ══════════════════════════════════════════════════════
+  // التحقق من صلاحية الأدمن
+  // ══════════════════════════════════════════════════════
+
+  async function checkAdmin(
+    supabase: SupabaseClient,
+    userId: string
+  ) {
+    try {
+      const {
+        data: profile,
+        error,
+      } = await supabase
+        .from("profiles")
+        .select("is_admin")
+        .eq("id", userId)
+        .maybeSingle();
+
+      console.log(
+        "=== MARIS ADMIN CHECK ==="
+      );
+      console.log(
+        "USER ID:",
+        userId
+      );
+      console.log(
+        "PROFILE:",
+        profile
+      );
+      console.log(
+        "PROFILE ERROR:",
+        error
+      );
+
+      if (!error && profile) {
+        return profile.is_admin === true;
+      }
+
+      // Fallback إذا تعذر الوصول إلى profiles
+      const {
+        data: rpcData,
+        error: rpcError,
+      } = await supabase.rpc(
+        "is_current_user_admin"
+      );
+
+      console.log(
+        "RPC ADMIN RESULT:",
+        rpcData
+      );
+      console.log(
+        "RPC ADMIN ERROR:",
+        rpcError
+      );
+
+      return rpcData === true;
+    } catch (error) {
+      console.error(
+        "Admin check failed:",
+        error
+      );
+
+      return false;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════
   // المصادقة + التحقق من صلاحية الأدمن
   // ══════════════════════════════════════════════════════
 
@@ -136,68 +202,52 @@ export default function AppShell({
       return;
     }
 
-    // بعد هذا التحقق TypeScript يعرف أن العميل موجود
     const supabase = supabaseClient;
 
     let mounted = true;
 
-    async function checkUser() {
+    async function initialize() {
       try {
-        const s = await getSession(supabase);
+        const currentSession =
+          await getSession(supabase);
 
         if (!mounted) return;
 
-        if (!s) {
+        if (!currentSession) {
+          setSession(null);
+          setIsAdmin(false);
+          setChecking(false);
           router.replace("/login");
           return;
         }
 
-        setSession(s);
+        setSession(currentSession);
 
-        // ══════════════════════════════════════════════
-        // القراءة المباشرة من profiles
-        // ══════════════════════════════════════════════
-
-        const {
-          data: profile,
-          error: profileError,
-        } = await supabase
-          .from("profiles")
-          .select("is_admin")
-          .eq("id", s.user.id)
-          .maybeSingle();
+        const adminStatus =
+          await checkAdmin(
+            supabase,
+            currentSession.user.id
+          );
 
         if (!mounted) return;
 
-        if (!profileError && profile) {
-          setIsAdmin(profile.is_admin === true);
-        } else {
-          // Fallback إلى RPC
-          const { data: rpcData } =
-            await supabase.rpc(
-              "is_current_user_admin"
-            );
-
-          if (mounted) {
-            setIsAdmin(rpcData === true);
-          }
-        }
-
+        setIsAdmin(adminStatus);
         setChecking(false);
       } catch (error) {
         console.error(
-          "AppShell admin/session check error:",
+          "AppShell initialization error:",
           error
         );
 
-        if (mounted) {
-          setIsAdmin(false);
-          setChecking(false);
-        }
+        if (!mounted) return;
+
+        setSession(null);
+        setIsAdmin(false);
+        setChecking(false);
       }
     }
 
-    checkUser();
+    initialize();
 
     // ══════════════════════════════════════════════
     // مراقبة حالة تسجيل الدخول
@@ -205,56 +255,36 @@ export default function AppShell({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      async (_event, currentSession) => {
-        if (!mounted) return;
+    } =
+      supabase.auth.onAuthStateChange(
+        async (
+          _event,
+          currentSession
+        ) => {
+          if (!mounted) return;
 
-        setSession(currentSession);
+          if (!currentSession) {
+            setSession(null);
+            setIsAdmin(false);
+            setChecking(false);
+            return;
+          }
 
-        if (!currentSession) {
-          setIsAdmin(false);
-          setChecking(false);
-          return;
-        }
+          setSession(currentSession);
+          setChecking(true);
 
-        try {
-          const {
-            data: profile,
-            error: profileError,
-          } = await supabase
-            .from("profiles")
-            .select("is_admin")
-            .eq("id", currentSession.user.id)
-            .maybeSingle();
+          const adminStatus =
+            await checkAdmin(
+              supabase,
+              currentSession.user.id
+            );
 
           if (!mounted) return;
 
-          if (!profileError && profile) {
-            setIsAdmin(
-              profile.is_admin === true
-            );
-          } else {
-            const { data: rpcData } =
-              await supabase.rpc(
-                "is_current_user_admin"
-              );
-
-            if (mounted) {
-              setIsAdmin(rpcData === true);
-            }
-          }
-        } catch (error) {
-          console.error(
-            "AppShell auth state admin check error:",
-            error
-          );
-
-          if (mounted) {
-            setIsAdmin(false);
-          }
+          setIsAdmin(adminStatus);
+          setChecking(false);
         }
-      }
-    );
+      );
 
     return () => {
       mounted = false;
@@ -292,7 +322,9 @@ export default function AppShell({
   // ══════════════════════════════════════════════════════
 
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
+    function handleKeyDown(
+      event: KeyboardEvent
+    ) {
       if (event.key === "Escape") {
         setMenuOpen(false);
       }
@@ -313,9 +345,17 @@ export default function AppShell({
     };
   }, [menuOpen]);
 
+  // ══════════════════════════════════════════════════════
+  // إعداد Supabase
+  // ══════════════════════════════════════════════════════
+
   if (!isSupabaseConfigured()) {
     return <SetupNotice />;
   }
+
+  // ══════════════════════════════════════════════════════
+  // شاشة التحقق
+  // ══════════════════════════════════════════════════════
 
   if (checking || !session) {
     return (
@@ -338,6 +378,9 @@ export default function AppShell({
       );
     }
 
+    setSession(null);
+    setIsAdmin(false);
+
     router.replace("/login");
   }
 
@@ -352,7 +395,9 @@ export default function AppShell({
           <button
             type="button"
             onClick={() =>
-              setMenuOpen((current) => !current)
+              setMenuOpen(
+                (current) => !current
+              )
             }
             className={cn(
               "flex h-11 w-11 items-center justify-center rounded-2xl",
@@ -398,18 +443,24 @@ export default function AppShell({
         </div>
       </header>
 
-      {/* الخلفية عند فتح القائمة */}
+      {/* ═══════════════════════════════════════════════
+          الخلفية عند فتح القائمة
+      ═══════════════════════════════════════════════ */}
 
       {menuOpen && (
         <button
           type="button"
           aria-label="إغلاق القائمة"
-          onClick={() => setMenuOpen(false)}
+          onClick={() =>
+            setMenuOpen(false)
+          }
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
         />
       )}
 
-      {/* القائمة الجانبية */}
+      {/* ═══════════════════════════════════════════════
+          القائمة الجانبية
+      ═══════════════════════════════════════════════ */}
 
       <aside
         className={cn(
@@ -469,45 +520,47 @@ export default function AppShell({
           aria-label="التنقل الرئيسي"
         >
           <div className="space-y-1">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() =>
-                  setMenuOpen(false)
-                }
-                className={cn(
-                  "flex min-h-[50px] items-center gap-4 rounded-2xl px-4 py-3",
-                  "font-bold transition-all duration-200",
-                  isActive(
+            {NAV_ITEMS.map(
+              (item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                  className={cn(
+                    "flex min-h-[50px] items-center gap-4 rounded-2xl px-4 py-3",
+                    "font-bold transition-all duration-200",
+                    isActive(
+                      pathname,
+                      item.href
+                    )
+                      ? "bg-gradient-to-l from-ocean-500/25 to-cyan-400/15 text-cyan-300 shadow-glow"
+                      : "text-foam/65 hover:bg-white/5 hover:text-foam"
+                  )}
+                >
+                  <span
+                    className="flex w-7 justify-center text-xl"
+                    aria-hidden
+                  >
+                    {item.icon}
+                  </span>
+
+                  <span>
+                    {item.label}
+                  </span>
+
+                  {isActive(
                     pathname,
                     item.href
-                  )
-                    ? "bg-gradient-to-l from-ocean-500/25 to-cyan-400/15 text-cyan-300 shadow-glow"
-                    : "text-foam/65 hover:bg-white/5 hover:text-foam"
-                )}
-              >
-                <span
-                  className="flex w-7 justify-center text-xl"
-                  aria-hidden
-                >
-                  {item.icon}
-                </span>
-
-                <span>
-                  {item.label}
-                </span>
-
-                {isActive(
-                  pathname,
-                  item.href
-                ) && (
-                  <span className="mr-auto text-cyan-400">
-                    ●
-                  </span>
-                )}
-              </Link>
-            ))}
+                  ) && (
+                    <span className="mr-auto text-cyan-400">
+                      ●
+                    </span>
+                  )}
+                </Link>
+              )
+            )}
 
             {/* عن MARIS */}
 
@@ -550,7 +603,9 @@ export default function AppShell({
               )}
             </Link>
 
-            {/* لوحة الإدارة */}
+            {/* ═══════════════════════════════════════
+                لوحة الإدارة
+            ═══════════════════════════════════════ */}
 
             {isAdmin && (
               <>
@@ -617,7 +672,9 @@ export default function AppShell({
         </div>
       </aside>
 
-      {/* المحتوى الرئيسي */}
+      {/* ═══════════════════════════════════════════════
+          المحتوى الرئيسي
+      ═══════════════════════════════════════════════ */}
 
       <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
         <div className="mx-auto w-full max-w-7xl">
@@ -627,4 +684,3 @@ export default function AppShell({
     </div>
   );
 }
-

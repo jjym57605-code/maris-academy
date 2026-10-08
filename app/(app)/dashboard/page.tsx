@@ -36,77 +36,30 @@ const QUICK_LINKS = [
     icon: "🎬",
     title: "الريلزات",
     description: "فيديوهات تعليمية قصيرة",
-    color: "pink",
   },
   {
     href: "/courses",
     icon: "📚",
     title: "الدورات",
     description: "جميع الدروس والدورات",
-    color: "cyan",
-  },
-  {
-    href: "/library",
-    icon: "📖",
-    title: "مكتبة الدروس",
-    description: "اكتشف مواردك التعليمية",
-    color: "sky",
   },
   {
     href: "/quizzes",
     icon: "📝",
     title: "الاختبارات",
     description: "اختبر معلوماتك",
-    color: "indigo",
-  },
-  {
-    href: "/forum",
-    icon: "💬",
-    title: "المنتدى",
-    description: "ناقش وتبادل المعرفة",
-    color: "violet",
   },
   {
     href: "/progress",
     icon: "📊",
     title: "تقدمي",
     description: "تابع مستواك وتقدمك",
-    color: "emerald",
   },
   {
     href: "/leaderboard",
     icon: "🏆",
     title: "الترتيب",
     description: "شاهد ترتيب الطلبة",
-    color: "yellow",
-  },
-  {
-    href: "/achievements",
-    icon: "🥇",
-    title: "الإنجازات",
-    description: "اكتشف إنجازاتك ومكافآتك",
-    color: "orange",
-  },
-  {
-    href: "/maris-id",
-    icon: "🪪",
-    title: "MARIS ID",
-    description: "بطاقتك الأكاديمية",
-    color: "teal",
-  },
-  {
-    href: "/profile",
-    icon: "👤",
-    title: "ملفي الشخصي",
-    description: "معلومات حسابك",
-    color: "amber",
-  },
-  {
-    href: "/about",
-    icon: "💙",
-    title: "عن MARIS",
-    description: "تعرّف على الأكاديمية",
-    color: "rose",
   },
 ];
 
@@ -114,7 +67,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [nextLesson, setNextLesson] = useState<NextLessonData | null>(null);
+  const [nextLesson, setNextLesson] =
+    useState<NextLessonData | null>(null);
   const [courses, setCourses] = useState<CourseWithMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -577,7 +531,7 @@ export default function DashboardPage() {
               ⚡ الوصول السريع
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              جميع أقسام MARIS ACADEMY في مكان واحد
+              أهم أقسام MARIS ACADEMY في مكان واحد
             </p>
           </div>
 

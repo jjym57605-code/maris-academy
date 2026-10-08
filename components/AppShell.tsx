@@ -22,7 +22,6 @@ import SetupNotice from "@/components/SetupNotice";
 // ══════════════════════════════════════════════════════
 // MARIS ACADEMY — App Shell
 // قائمة تنقل موحدة للكمبيوتر والهاتف
-// ☰ لفتح / إغلاق القائمة
 // ══════════════════════════════════════════════════════
 
 const NAV_ITEMS = [
@@ -126,60 +125,134 @@ export default function AppShell({
     useState(false);
 
   // ══════════════════════════════════════════════════════
-  // المصادقة
+  // المصادقة + التحقق من صلاحية الأدمن
   // ══════════════════════════════════════════════════════
 
   useEffect(() => {
-    const supabase = getSupabase();
+    const supabaseClient = getSupabase();
 
-    if (!supabase) {
+    if (!supabaseClient) {
       setChecking(false);
       return;
     }
 
+    // بعد هذا التحقق TypeScript يعرف أن العميل موجود
+    const supabase = supabaseClient;
+
     let mounted = true;
 
-    getSession(supabase).then(async (s) => {
-      if (!mounted) return;
+    async function checkUser() {
+      try {
+        const s = await getSession(supabase);
 
-      if (!s) {
-        router.replace("/login");
-        return;
-      }
+        if (!mounted) return;
 
-      setSession(s);
+        if (!s) {
+          router.replace("/login");
+          return;
+        }
 
-      const { data } =
-        await supabase.rpc(
-          "is_current_user_admin"
+        setSession(s);
+
+        // ══════════════════════════════════════════════
+        // القراءة المباشرة من profiles
+        // ══════════════════════════════════════════════
+
+        const {
+          data: profile,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", s.user.id)
+          .maybeSingle();
+
+        if (!mounted) return;
+
+        if (!profileError && profile) {
+          setIsAdmin(profile.is_admin === true);
+        } else {
+          // Fallback إلى RPC
+          const { data: rpcData } =
+            await supabase.rpc(
+              "is_current_user_admin"
+            );
+
+          if (mounted) {
+            setIsAdmin(rpcData === true);
+          }
+        }
+
+        setChecking(false);
+      } catch (error) {
+        console.error(
+          "AppShell admin/session check error:",
+          error
         );
 
-      if (mounted) {
-        setIsAdmin(data === true);
-        setChecking(false);
+        if (mounted) {
+          setIsAdmin(false);
+          setChecking(false);
+        }
       }
-    });
+    }
+
+    checkUser();
+
+    // ══════════════════════════════════════════════
+    // مراقبة حالة تسجيل الدخول
+    // ══════════════════════════════════════════════
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (_event, currentSession) => {
         if (!mounted) return;
 
-        setSession(session);
+        setSession(currentSession);
 
-        if (!session) {
+        if (!currentSession) {
           setIsAdmin(false);
+          setChecking(false);
           return;
         }
 
-        supabase
-          .rpc("is_current_user_admin")
-          .then(({ data }) => {
+        try {
+          const {
+            data: profile,
+            error: profileError,
+          } = await supabase
+            .from("profiles")
+            .select("is_admin")
+            .eq("id", currentSession.user.id)
+            .maybeSingle();
+
+          if (!mounted) return;
+
+          if (!profileError && profile) {
+            setIsAdmin(
+              profile.is_admin === true
+            );
+          } else {
+            const { data: rpcData } =
+              await supabase.rpc(
+                "is_current_user_admin"
+              );
+
             if (mounted) {
-              setIsAdmin(data === true);
+              setIsAdmin(rpcData === true);
             }
-          });
+          }
+        } catch (error) {
+          console.error(
+            "AppShell auth state admin check error:",
+            error
+          );
+
+          if (mounted) {
+            setIsAdmin(false);
+          }
+        }
       }
     );
 
@@ -198,7 +271,7 @@ export default function AppShell({
   }, [pathname]);
 
   // ══════════════════════════════════════════════════════
-  // منع Scroll في الخلفية عندما تكون القائمة مفتوحة
+  // منع Scroll في الخلفية
   // ══════════════════════════════════════════════════════
 
   useEffect(() => {
@@ -276,7 +349,6 @@ export default function AppShell({
 
       <header className="sticky top-0 z-30 border-b border-white/5 bg-navy-950/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
-          {/* زر القائمة */}
           <button
             type="button"
             onClick={() =>
@@ -302,7 +374,6 @@ export default function AppShell({
             </span>
           </button>
 
-          {/* الشعار */}
           <Link
             href="/dashboard"
             className="flex items-center gap-2"
@@ -327,9 +398,7 @@ export default function AppShell({
         </div>
       </header>
 
-      {/* ═══════════════════════════════════════════════
-          الخلفية عند فتح القائمة
-      ═══════════════════════════════════════════════ */}
+      {/* الخلفية عند فتح القائمة */}
 
       {menuOpen && (
         <button
@@ -340,9 +409,7 @@ export default function AppShell({
         />
       )}
 
-      {/* ═══════════════════════════════════════════════
-          القائمة الجانبية
-      ═══════════════════════════════════════════════ */}
+      {/* القائمة الجانبية */}
 
       <aside
         className={cn(
@@ -357,6 +424,7 @@ export default function AppShell({
         aria-hidden={!menuOpen}
       >
         {/* رأس القائمة */}
+
         <div className="flex items-center justify-between border-b border-white/5 px-5 py-5">
           <Link
             href="/dashboard"
@@ -395,6 +463,7 @@ export default function AppShell({
         </div>
 
         {/* روابط التنقل */}
+
         <nav
           className="h-[calc(100vh-145px)] overflow-y-auto px-3 py-4"
           aria-label="التنقل الرئيسي"
@@ -440,7 +509,7 @@ export default function AppShell({
               </Link>
             ))}
 
-            {/* ═══ عن MARIS ═══ */}
+            {/* عن MARIS */}
 
             <div className="my-3 border-t border-white/5" />
 
@@ -481,7 +550,7 @@ export default function AppShell({
               )}
             </Link>
 
-            {/* ═══ لوحة الإدارة ═══ */}
+            {/* لوحة الإدارة */}
 
             {isAdmin && (
               <>
@@ -529,6 +598,7 @@ export default function AppShell({
         </nav>
 
         {/* تسجيل الخروج */}
+
         <div className="absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy-950/95 p-3">
           <button
             type="button"
@@ -547,9 +617,7 @@ export default function AppShell({
         </div>
       </aside>
 
-      {/* ═══════════════════════════════════════════════
-          المحتوى الرئيسي
-      ═══════════════════════════════════════════════ */}
+      {/* المحتوى الرئيسي */}
 
       <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
         <div className="mx-auto w-full max-w-7xl">
@@ -559,6 +627,4 @@ export default function AppShell({
     </div>
   );
 }
-
-
 

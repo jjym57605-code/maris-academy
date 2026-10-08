@@ -1,9 +1,9 @@
+
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
-
 import { getProfile } from "@/services/auth";
 
 type LibrarySubject = {
@@ -14,7 +14,6 @@ type LibrarySubject = {
   description: string | null;
   order_index: number | null;
   is_active: boolean;
-  created_at: string | null;
 };
 
 type LibraryResource = {
@@ -27,8 +26,6 @@ type LibraryResource = {
   pdf_url: string | null;
   year: number | null;
   is_published: boolean;
-  created_at: string | null;
-  updated_at: string | null;
 };
 
 const RESOURCE_TYPES = [
@@ -48,20 +45,8 @@ export default function AdminLibraryPage() {
   const [success, setSuccess] = useState("");
 
   const [subjects, setSubjects] = useState<LibrarySubject[]>([]);
-  const [resources, setResources] = useState<LibraryResource[]>([]);
-
-  const [selectedStream, setSelectedStream] = useState("all");
-  const [selectedSubjectId, setSelectedSubjectId] = useState("");
-
   const [showSubjectForm, setShowSubjectForm] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
-
-  const [editingSubject, setEditingSubject] =
-    useState<LibrarySubject | null>(null);
-
-  const [editingResource, setEditingResource] =
-    useState<LibraryResource | null>(null);
-
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
 
   const [subjectForm, setSubjectForm] = useState({
@@ -115,85 +100,48 @@ export default function AdminLibraryPage() {
         return;
       }
 
-      const [subjectsResult, resourcesResult] = await Promise.all([
-        supabase
-          .from("library_subjects")
-          .select("*")
-          .order("stream", { ascending: true })
-          .order("order_index", { ascending: true })
-          .order("name", { ascending: true }),
+      const { data, error: subjectsError } = await supabase
+        .from("library_subjects")
+        .select(
+          "id, stream, name, icon, description, order_index, is_active"
+        )
+        .order("stream", { ascending: true })
+        .order("order_index", { ascending: true })
+        .order("name", { ascending: true });
 
-        supabase
-          .from("library_resources")
-          .select("*")
-          .order("created_at", { ascending: false }),
-      ]);
-
-      if (subjectsResult.error) {
-        throw subjectsResult.error;
+      if (subjectsError) {
+        throw subjectsError;
       }
 
-      if (resourcesResult.error) {
-        throw resourcesResult.error;
-      }
-
-      setSubjects((subjectsResult.data ?? []) as LibrarySubject[]);
-      setResources((resourcesResult.data ?? []) as LibraryResource[]);
+      setSubjects((data ?? []) as LibrarySubject[]);
     } catch (err) {
       console.error(err);
-      setError("حدث خطأ أثناء تحميل مكتبة الدروس.");
+      setError("حدث خطأ أثناء تحميل المواد.");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadLibrary();
+    void loadLibrary();
+    // تحميل بيانات المكتبة عند فتح الصفحة.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const streams = useMemo(() => {
-    return Array.from(new Set(subjects.map((subject) => subject.stream))).sort(
-      (a, b) => a.localeCompare(b, "ar")
-    );
-  }, [subjects]);
-
-  const filteredSubjects = useMemo(() => {
-    if (selectedStream === "all") {
-      return subjects;
-    }
-
-    return subjects.filter((subject) => subject.stream === selectedStream);
-  }, [subjects, selectedStream]);
-
-  const resourcesBySubject = useMemo(() => {
-    const map = new Map<string, number>();
-
-    for (const resource of resources) {
-      map.set(
-        resource.subject_id,
-        (map.get(resource.subject_id) ?? 0) + 1
-      );
-    }
-
-    return map;
-  }, [resources]);
 
   function resetSubjectForm() {
     setSubjectForm({
-      stream: selectedStream !== "all" ? selectedStream : "",
+      stream: "",
       name: "",
       icon: "📚",
       description: "",
       order_index: "0",
       is_active: true,
     });
-
-    setEditingSubject(null);
   }
 
   function resetResourceForm() {
     setResourceForm({
-      subject_id: selectedSubjectId || filteredSubjects[0]?.id || "",
+      subject_id: subjects[0]?.id ?? "",
       title: "",
       description: "",
       resource_type: "summary",
@@ -202,80 +150,29 @@ export default function AdminLibraryPage() {
       year: "",
       is_published: false,
     });
-
     setSelectedPdfFile(null);
-    setEditingResource(null);
   }
 
   function openNewSubject() {
     resetSubjectForm();
     setShowSubjectForm(true);
-    setSuccess("");
+    setShowResourceForm(false);
     setError("");
+    setSuccess("");
   }
 
-  function openEditSubject(subject: LibrarySubject) {
-    setEditingSubject(subject);
+  function openNewResource() {
+    if (subjects.length === 0) {
+      setError("أضف مادة أولاً حتى تتمكن من إضافة مورد.");
+      setSuccess("");
+      return;
+    }
 
-    setSubjectForm({
-      stream: subject.stream,
-      name: subject.name,
-      icon: subject.icon ?? "📚",
-      description: subject.description ?? "",
-      order_index: String(subject.order_index ?? 0),
-      is_active: subject.is_active,
-    });
-
-    setShowSubjectForm(true);
-    setSuccess("");
-    setError("");
-  }
-
-  function openNewResource(subjectId?: string) {
-    const targetSubject =
-      subjectId ||
-      selectedSubjectId ||
-      filteredSubjects[0]?.id ||
-      subjects[0]?.id ||
-      "";
-
-    setEditingResource(null);
-    setSelectedPdfFile(null);
-
-    setResourceForm({
-      subject_id: targetSubject,
-      title: "",
-      description: "",
-      resource_type: "summary",
-      content: "",
-      pdf_url: "",
-      year: "",
-      is_published: false,
-    });
-
+    resetResourceForm();
     setShowResourceForm(true);
-    setSuccess("");
+    setShowSubjectForm(false);
     setError("");
-  }
-
-  function openEditResource(resource: LibraryResource) {
-    setEditingResource(resource);
-    setSelectedPdfFile(null);
-
-    setResourceForm({
-      subject_id: resource.subject_id,
-      title: resource.title,
-      description: resource.description ?? "",
-      resource_type: resource.resource_type,
-      content: resource.content ?? "",
-      pdf_url: resource.pdf_url ?? "",
-      year: resource.year ? String(resource.year) : "",
-      is_published: resource.is_published,
-    });
-
-    setShowResourceForm(true);
     setSuccess("");
-    setError("");
   }
 
   function handlePdfSelection(file: File | undefined) {
@@ -287,7 +184,10 @@ export default function AdminLibraryPage() {
       return;
     }
 
-    if (file.type !== "application/pdf") {
+    if (
+      file.type !== "application/pdf" &&
+      !file.name.toLowerCase().endsWith(".pdf")
+    ) {
       setSelectedPdfFile(null);
       setError("الملف يجب أن يكون بصيغة PDF فقط.");
       return;
@@ -300,36 +200,6 @@ export default function AdminLibraryPage() {
     }
 
     setSelectedPdfFile(file);
-  }
-
-  function isStoragePath(value: string | null) {
-    return Boolean(
-      value &&
-        (value.startsWith("library-pdfs/") ||
-          value.startsWith("library-pdfs\\"))
-    );
-  }
-
-  async function deleteStorageFile(path: string | null) {
-    if (!supabase || !path || !isStoragePath(path)) {
-      return;
-    }
-
-    const cleanPath = path
-      .replace(/^library-pdfs[\\/]/, "")
-      .replace(/^\/+/, "");
-
-    if (!cleanPath) {
-      return;
-    }
-
-    const { error: removeError } = await supabase.storage
-      .from("library-pdfs")
-      .remove([cleanPath]);
-
-    if (removeError) {
-      console.error("PDF delete error:", removeError);
-    }
   }
 
   async function uploadPdf(
@@ -347,8 +217,8 @@ export default function AdminLibraryPage() {
       .replace(/^-|-$/g, "");
 
     const fileName = safeFileName || "document.pdf";
-
-    const storagePath = `${subjectId}/${resourceId}-${Date.now()}-${fileName}`;
+    const storagePath =
+      `${subjectId}/${resourceId}-${Date.now()}-${fileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from("library-pdfs")
@@ -362,6 +232,26 @@ export default function AdminLibraryPage() {
     }
 
     return `library-pdfs/${storagePath}`;
+  }
+
+  async function deleteUploadedPdf(path: string | null) {
+    if (!supabase || !path?.startsWith("library-pdfs/")) {
+      return;
+    }
+
+    const cleanPath = path.slice("library-pdfs/".length);
+
+    if (!cleanPath) {
+      return;
+    }
+
+    const { error: removeError } = await supabase.storage
+      .from("library-pdfs")
+      .remove([cleanPath]);
+
+    if (removeError) {
+      console.error("PDF cleanup error:", removeError);
+    }
   }
 
   async function saveSubject() {
@@ -389,114 +279,22 @@ export default function AdminLibraryPage() {
         is_active: subjectForm.is_active,
       };
 
-      if (editingSubject) {
-        const { error: updateError } = await supabase
-          .from("library_subjects")
-          .update(payload)
-          .eq("id", editingSubject.id);
+      const { error: insertError } = await supabase
+        .from("library_subjects")
+        .insert(payload);
 
-        if (updateError) {
-          throw updateError;
-        }
-
-        setSuccess("تم تعديل المادة بنجاح.");
-      } else {
-        const { error: insertError } = await supabase
-          .from("library_subjects")
-          .insert(payload);
-
-        if (insertError) {
-          throw insertError;
-        }
-
-        setSuccess("تمت إضافة المادة بنجاح.");
+      if (insertError) {
+        throw insertError;
       }
 
+      setSuccess("تمت إضافة المادة بنجاح، وتقدر تلقاها في صفحة الإدارة.");
       setShowSubjectForm(false);
       resetSubjectForm();
 
       await loadLibrary();
     } catch (err) {
       console.error(err);
-      setError("تعذر حفظ المادة.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function toggleSubject(subject: LibrarySubject) {
-    if (!supabase) return;
-
-    setSaving(true);
-    setError("");
-    setSuccess("");
-
-    try {
-      const { error: updateError } = await supabase
-        .from("library_subjects")
-        .update({
-          is_active: !subject.is_active,
-        })
-        .eq("id", subject.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      setSuccess(
-        subject.is_active ? "تم إخفاء المادة." : "تم تفعيل المادة."
-      );
-
-      await loadLibrary();
-    } catch (err) {
-      console.error(err);
-      setError("تعذر تغيير حالة المادة.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteSubject(subject: LibrarySubject) {
-    if (!supabase) return;
-
-    const confirmed = window.confirm(
-      `هل أنت متأكد من حذف المادة "${subject.name}"؟\nسيتم حذف جميع الموارد التابعة لها أيضاً.`
-    );
-
-    if (!confirmed) return;
-
-    setSaving(true);
-    setError("");
-    setSuccess("");
-
-    try {
-      const subjectResources = resources.filter(
-        (resource) => resource.subject_id === subject.id
-      );
-
-      for (const resource of subjectResources) {
-        await deleteStorageFile(resource.pdf_url);
-      }
-
-      const { error: deleteError } = await supabase
-        .from("library_subjects")
-        .delete()
-        .eq("id", subject.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      if (selectedSubjectId === subject.id) {
-        setSelectedSubjectId("");
-      }
-
-      setSuccess("تم حذف المادة والموارد التابعة لها.");
-
-      await loadLibrary();
-    } catch (err) {
-      console.error(err);
-      setError("تعذر حذف المادة.");
+      setError("تعذر حفظ المادة. تحقق من البيانات والصلاحيات.");
     } finally {
       setSaving(false);
     }
@@ -517,99 +315,77 @@ export default function AdminLibraryPage() {
       return;
     }
 
+    if (selectedPdfFile && resourceForm.pdf_url.trim()) {
+      setError("اختر رفع PDF من جهازك أو استعمال رابط خارجي، وليس الاثنين معاً.");
+      return;
+    }
+
     setSaving(true);
     setError("");
     setSuccess("");
 
     let createdResourceId: string | null = null;
+    let uploadedPdfPath: string | null = null;
 
     try {
-      const basePayload = {
+      const payload = {
         subject_id: resourceForm.subject_id,
         title: resourceForm.title.trim(),
         description: resourceForm.description.trim() || null,
         resource_type: resourceForm.resource_type,
         content: resourceForm.content.trim() || null,
-        pdf_url:
-          editingResource?.pdf_url ??
-          (resourceForm.pdf_url.trim() || null),
+        pdf_url: resourceForm.pdf_url.trim() || null,
         year: resourceForm.year ? Number(resourceForm.year) : null,
         is_published: resourceForm.is_published,
         updated_at: new Date().toISOString(),
       };
 
-      let resourceId: string;
+      const { data: insertedResource, error: insertError } = await supabase
+        .from("library_resources")
+        .insert(payload)
+        .select("id")
+        .single();
 
-      if (editingResource) {
-        resourceId = editingResource.id;
-
-        const { error: updateError } = await supabase
-          .from("library_resources")
-          .update(basePayload)
-          .eq("id", editingResource.id);
-
-        if (updateError) {
-          throw updateError;
-        }
-      } else {
-        const { data: insertedResource, error: insertError } = await supabase
-          .from("library_resources")
-          .insert(basePayload)
-          .select("id")
-          .single();
-
-        if (insertError) {
-          throw insertError;
-        }
-
-        if (!insertedResource?.id) {
-          throw new Error("لم يتم الحصول على معرف المورد.");
-        }
-
-        resourceId = insertedResource.id;
-        createdResourceId = resourceId;
+      if (insertError) {
+        throw insertError;
       }
 
-      let newPdfPath: string | null = null;
+      if (!insertedResource?.id) {
+        throw new Error("لم يتم الحصول على معرف المورد.");
+      }
+
+      createdResourceId = insertedResource.id;
 
       if (selectedPdfFile) {
         setUploadingPdf(true);
 
-        newPdfPath = await uploadPdf(
+        uploadedPdfPath = await uploadPdf(
           selectedPdfFile,
           resourceForm.subject_id,
-          resourceId
+          insertedResource.id
         );
 
         const { error: pdfUpdateError } = await supabase
           .from("library_resources")
           .update({
-            pdf_url: newPdfPath,
+            pdf_url: uploadedPdfPath,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", resourceId);
+          .eq("id", insertedResource.id);
 
         if (pdfUpdateError) {
-          await deleteStorageFile(newPdfPath);
           throw pdfUpdateError;
-        }
-
-        if (
-          editingResource?.pdf_url &&
-          editingResource.pdf_url !== newPdfPath
-        ) {
-          await deleteStorageFile(editingResource.pdf_url);
         }
       }
 
       setSuccess(
-        editingResource
-          ? selectedPdfFile
-            ? "تم تعديل المورد واستبدال ملف PDF بنجاح."
-            : "تم تعديل المورد بنجاح."
-          : selectedPdfFile
-            ? "تمت إضافة المورد ورفع ملف PDF بنجاح."
-            : "تمت إضافة المورد بنجاح."
+        selectedPdfFile
+          ? resourceForm.is_published
+            ? "تمت إضافة المورد ورفع PDF ونشره بنجاح."
+            : "تمت إضافة المورد ورفع PDF بنجاح. المورد محفوظ كمسودة."
+          : resourceForm.is_published
+            ? "تمت إضافة المورد ونشره بنجاح."
+            : "تمت إضافة المورد بنجاح. المورد محفوظ كمسودة."
       );
 
       setShowResourceForm(false);
@@ -619,11 +395,19 @@ export default function AdminLibraryPage() {
     } catch (err) {
       console.error("Save resource error:", err);
 
+      if (uploadedPdfPath) {
+        await deleteUploadedPdf(uploadedPdfPath);
+      }
+
       if (createdResourceId) {
-        await supabase
+        const { error: cleanupError } = await supabase
           .from("library_resources")
           .delete()
           .eq("id", createdResourceId);
+
+        if (cleanupError) {
+          console.error("Resource cleanup error:", cleanupError);
+        }
       }
 
       setError(
@@ -637,117 +421,14 @@ export default function AdminLibraryPage() {
     }
   }
 
-  async function toggleResource(resource: LibraryResource) {
-    if (!supabase) return;
-
-    setSaving(true);
-    setError("");
-    setSuccess("");
-
-    try {
-      const { error: updateError } = await supabase
-        .from("library_resources")
-        .update({
-          is_published: !resource.is_published,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", resource.id);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      setSuccess(
-        resource.is_published ? "تم إخفاء المورد." : "تم نشر المورد."
-      );
-
-      await loadLibrary();
-    } catch (err) {
-      console.error(err);
-      setError("تعذر تغيير حالة المورد.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteResource(resource: LibraryResource) {
-    if (!supabase) return;
-
-    const confirmed = window.confirm(
-      `هل أنت متأكد من حذف المورد "${resource.title}"؟`
-    );
-
-    if (!confirmed) return;
-
-    setSaving(true);
-    setError("");
-    setSuccess("");
-
-    try {
-      await deleteStorageFile(resource.pdf_url);
-
-      const { error: deleteError } = await supabase
-        .from("library_resources")
-        .delete()
-        .eq("id", resource.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      setSuccess("تم حذف المورد وملف PDF المرتبط به.");
-
-      await loadLibrary();
-    } catch (err) {
-      console.error(err);
-      setError("تعذر حذف المورد.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function getSubjectName(subjectId: string) {
-    return subjects.find((subject) => subject.id === subjectId)?.name ?? "—";
-  }
-
-  function getResourceTypeLabel(type: string) {
-    return (
-      RESOURCE_TYPES.find((item) => item.value === type)?.label ?? type
-    );
-  }
-
-  const visibleResources = useMemo(() => {
-    if (selectedSubjectId) {
-      return resources.filter(
-        (resource) => resource.subject_id === selectedSubjectId
-      );
-    }
-
-    if (selectedStream === "all") {
-      return resources;
-    }
-
-    const subjectIds = new Set(
-      filteredSubjects.map((subject) => subject.id)
-    );
-
-    return resources.filter((resource) =>
-      subjectIds.has(resource.subject_id)
-    );
-  }, [
-    resources,
-    selectedSubjectId,
-    selectedStream,
-    filteredSubjects,
-  ]);
-
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-950 px-4 py-10 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
-            جاري تحميل مكتبة الدروس...
-          </div>
+      <main
+        dir="rtl"
+        className="min-h-screen bg-slate-950 px-4 py-10 text-white"
+      >
+        <div className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
+          جاري تحميل مكتبة الدروس...
         </div>
       </main>
     );
@@ -758,133 +439,83 @@ export default function AdminLibraryPage() {
       dir="rtl"
       className="min-h-screen bg-slate-950 px-4 py-8 text-white"
     >
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
+      <div className="mx-auto max-w-5xl space-y-6">
         <section className="rounded-3xl border border-cyan-400/20 bg-gradient-to-br from-cyan-950/60 via-slate-900 to-slate-950 p-6 shadow-2xl">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="mb-2 text-sm text-cyan-300">
-                🌊 MARIS ACADEMY ²⁰²⁷
-              </div>
+          <div className="mb-2 text-sm text-cyan-300">
+            🌊 MARIS ACADEMY ²⁰²⁷
+          </div>
 
-              <h1 className="text-3xl font-black">
-                📖 إدارة مكتبة الدروس
-              </h1>
+          <h1 className="text-3xl font-black">
+            📖 مكتبة الدروس
+          </h1>
 
-              <p className="mt-2 text-sm text-slate-300">
-                إدارة المواد والملخصات والتمارين ومواضيع البكالوريا والحلول.
-              </p>
-            </div>
+          <p className="mt-2 text-sm text-slate-300">
+            إضافة المواد والموارد ونشرها للطلاب.
+          </p>
 
-            <div className="flex flex-wrap gap-3">
-              <button
-                onClick={openNewSubject}
-                className="rounded-2xl bg-cyan-500 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-400"
-              >
-                ➕ إضافة مادة
-              </button>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={openNewSubject}
+              className="rounded-2xl bg-cyan-500 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-400"
+            >
+              ➕ إضافة مادة
+            </button>
 
-              <button
-                onClick={() => openNewResource()}
-                disabled={subjects.length === 0}
-                className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 font-bold text-cyan-200 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                📚 إضافة مورد
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={openNewResource}
+              disabled={subjects.length === 0}
+              className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 font-bold text-cyan-200 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              📚 إضافة مورد
+            </button>
+
+            <Link
+              href="/admin/library/manage"
+              className="rounded-2xl border border-white/10 bg-white/10 px-5 py-3 font-bold text-white transition hover:bg-white/15"
+            >
+              🗂️ إدارة المواد والموارد
+            </Link>
           </div>
         </section>
 
-        {/* Messages */}
         {error && (
-          <div className="rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+          <div
+            role="alert"
+            className="rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-200"
+          >
             ❌ {error}
           </div>
         )}
 
         {success && (
-          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-200">
+          <div
+            role="status"
+            className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 py-4 text-sm text-emerald-200"
+          >
             ✅ {success}
           </div>
         )}
 
-        {/* Stats */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <div className="text-sm text-slate-400">المواد</div>
-
-            <div className="mt-2 text-3xl font-black">
-              {subjects.length}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <div className="text-sm text-slate-400">الموارد</div>
-
-            <div className="mt-2 text-3xl font-black">
-              {resources.length}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <div className="text-sm text-slate-400">منشورة</div>
-
-            <div className="mt-2 text-3xl font-black text-emerald-300">
-              {resources.filter((resource) => resource.is_published).length}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
-            <div className="text-sm text-slate-400">الشعب الموجودة</div>
-
-            <div className="mt-2 text-3xl font-black text-cyan-300">
-              {streams.length}
-            </div>
-          </div>
-        </section>
-
-        {/* Stream filter */}
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
-          <label className="mb-2 block text-sm font-bold text-slate-300">
-            تصفية حسب الشعبة
-          </label>
-
-          <select
-            value={selectedStream}
-            onChange={(event) => {
-              setSelectedStream(event.target.value);
-              setSelectedSubjectId("");
-            }}
-            className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-cyan-400 lg:max-w-md"
-          >
-            <option value="all">كل الشعب</option>
-
-            {streams.map((stream) => (
-              <option key={stream} value={stream}>
-                {stream}
-              </option>
-            ))}
-          </select>
-        </section>
-
-        {/* Subject form */}
         {showSubjectForm && (
           <section className="rounded-3xl border border-cyan-400/20 bg-cyan-950/20 p-6">
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-5 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black">
-                  {editingSubject ? "✏️ تعديل المادة" : "➕ إضافة مادة"}
+                  ➕ إضافة مادة
                 </h2>
-
                 <p className="mt-1 text-sm text-slate-400">
-                  المادة مرتبطة بشعبة محددة.
+                  أدخل معلومات المادة، وبعد الحفظ تلقاها في صفحة الإدارة.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={() => {
                   setShowSubjectForm(false);
                   resetSubjectForm();
+                  setError("");
                 }}
                 className="rounded-xl border border-white/10 px-3 py-2 text-slate-300 hover:bg-white/5"
               >
@@ -897,7 +528,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   الشعبة
                 </label>
-
                 <input
                   value={subjectForm.stream}
                   onChange={(event) =>
@@ -906,7 +536,7 @@ export default function AdminLibraryPage() {
                       stream: event.target.value,
                     }))
                   }
-                  placeholder="مثال: رياضيات"
+                  placeholder="مثال: تقني رياضي"
                   className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 outline-none focus:border-cyan-400"
                 />
               </div>
@@ -915,7 +545,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   اسم المادة
                 </label>
-
                 <input
                   value={subjectForm.name}
                   onChange={(event) =>
@@ -933,7 +562,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   الأيقونة
                 </label>
-
                 <input
                   value={subjectForm.icon}
                   onChange={(event) =>
@@ -950,7 +578,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   ترتيب المادة
                 </label>
-
                 <input
                   type="number"
                   value={subjectForm.order_index}
@@ -968,7 +595,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   الوصف
                 </label>
-
                 <textarea
                   value={subjectForm.description}
                   onChange={(event) =>
@@ -995,12 +621,12 @@ export default function AdminLibraryPage() {
                   }
                   className="h-5 w-5"
                 />
-
                 المادة مفعلة للطلاب
               </label>
             </div>
 
             <button
+              type="button"
               onClick={saveSubject}
               disabled={saving}
               className="mt-5 rounded-2xl bg-cyan-500 px-6 py-3 font-black text-slate-950 disabled:opacity-50"
@@ -1010,139 +636,24 @@ export default function AdminLibraryPage() {
           </section>
         )}
 
-        {/* Subjects */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-black">📚 المواد</h2>
-
-            <span className="text-sm text-slate-400">
-              {filteredSubjects.length} مادة
-            </span>
-          </div>
-
-          {filteredSubjects.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-10 text-center text-slate-400">
-              لا توجد مواد مضافة حالياً.
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {filteredSubjects.map((subject) => (
-                <article
-                  key={subject.id}
-                  className={`rounded-3xl border p-5 ${
-                    selectedSubjectId === subject.id
-                      ? "border-cyan-400/50 bg-cyan-950/20"
-                      : "border-white/10 bg-white/5"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <button
-                      onClick={() =>
-                        setSelectedSubjectId(
-                          selectedSubjectId === subject.id
-                            ? ""
-                            : subject.id
-                        )
-                      }
-                      className="flex min-w-0 flex-1 items-start gap-3 text-right"
-                    >
-                      <span className="text-3xl">
-                        {subject.icon || "📚"}
-                      </span>
-
-                      <div className="min-w-0">
-                        <h3 className="truncate text-lg font-black">
-                          {subject.name}
-                        </h3>
-
-                        <p className="mt-1 text-sm text-cyan-300">
-                          {subject.stream}
-                        </p>
-
-                        {subject.description && (
-                          <p className="mt-2 line-clamp-2 text-sm text-slate-400">
-                            {subject.description}
-                          </p>
-                        )}
-                      </div>
-                    </button>
-
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${
-                        subject.is_active
-                          ? "bg-emerald-500/10 text-emerald-300"
-                          : "bg-red-500/10 text-red-300"
-                      }`}
-                    >
-                      {subject.is_active ? "مفعلة" : "مخفية"}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-400">
-                    <span className="rounded-xl bg-white/5 px-3 py-2">
-                      📄 {resourcesBySubject.get(subject.id) ?? 0} مورد
-                    </span>
-
-                    <span className="rounded-xl bg-white/5 px-3 py-2">
-                      ترتيب: {subject.order_index ?? 0}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                      onClick={() => openNewResource(subject.id)}
-                      className="rounded-xl bg-cyan-500/10 px-3 py-2 text-sm font-bold text-cyan-300 hover:bg-cyan-500/20"
-                    >
-                      ➕ مورد
-                    </button>
-
-                    <button
-                      onClick={() => openEditSubject(subject)}
-                      className="rounded-xl bg-white/5 px-3 py-2 text-sm font-bold text-slate-200 hover:bg-white/10"
-                    >
-                      ✏️ تعديل
-                    </button>
-
-                    <button
-                      onClick={() => toggleSubject(subject)}
-                      className="rounded-xl bg-white/5 px-3 py-2 text-sm font-bold text-slate-200 hover:bg-white/10"
-                    >
-                      {subject.is_active ? "🙈 إخفاء" : "👁️ تفعيل"}
-                    </button>
-
-                    <button
-                      onClick={() => deleteSubject(subject)}
-                      className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-bold text-red-300 hover:bg-red-500/20"
-                    >
-                      🗑️ حذف
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Resource form */}
         {showResourceForm && (
           <section className="rounded-3xl border border-emerald-400/20 bg-emerald-950/20 p-6">
-            <div className="mb-5 flex items-center justify-between">
+            <div className="mb-5 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black">
-                  {editingResource
-                    ? "✏️ تعديل المورد"
-                    : "➕ إضافة مورد جديد"}
+                  📚 إضافة مورد جديد
                 </h2>
-
                 <p className="mt-1 text-sm text-slate-400">
-                  يمكنك كتابة المحتوى داخل المنصة أو رفع ملف PDF من الهاتف أو الكمبيوتر.
+                  يمكنك كتابة المحتوى أو رفع PDF ونشر المورد للطلاب.
                 </p>
               </div>
 
               <button
+                type="button"
                 onClick={() => {
                   setShowResourceForm(false);
                   resetResourceForm();
+                  setError("");
                 }}
                 className="rounded-xl border border-white/10 px-3 py-2 text-slate-300 hover:bg-white/5"
               >
@@ -1155,7 +666,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   المادة
                 </label>
-
                 <select
                   value={resourceForm.subject_id}
                   onChange={(event) =>
@@ -1167,7 +677,6 @@ export default function AdminLibraryPage() {
                   className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 outline-none focus:border-emerald-400"
                 >
                   <option value="">اختر المادة</option>
-
                   {subjects.map((subject) => (
                     <option key={subject.id} value={subject.id}>
                       {subject.stream} — {subject.name}
@@ -1180,7 +689,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   نوع المورد
                 </label>
-
                 <select
                   value={resourceForm.resource_type}
                   onChange={(event) =>
@@ -1203,7 +711,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   العنوان
                 </label>
-
                 <input
                   value={resourceForm.title}
                   onChange={(event) =>
@@ -1221,7 +728,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   الوصف
                 </label>
-
                 <textarea
                   value={resourceForm.description}
                   onChange={(event) =>
@@ -1240,7 +746,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   المحتوى الداخلي
                 </label>
-
                 <textarea
                   value={resourceForm.content}
                   onChange={(event) =>
@@ -1253,18 +758,15 @@ export default function AdminLibraryPage() {
                   placeholder="اكتب محتوى الملخص أو التمرين أو الحل هنا..."
                   className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 outline-none focus:border-emerald-400"
                 />
-
                 <p className="mt-2 text-xs text-slate-500">
-                  اختياري. يمكن تركه فارغاً إذا كان المورد PDF فقط.
+                  اختياري إذا كان المورد PDF فقط.
                 </p>
               </div>
 
-              {/* PDF Upload */}
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-bold">
                   📄 ملف PDF
                 </label>
-
                 <div className="rounded-2xl border border-dashed border-emerald-400/30 bg-emerald-400/5 p-4">
                   <input
                     type="file"
@@ -1272,62 +774,43 @@ export default function AdminLibraryPage() {
                     onChange={(event) =>
                       handlePdfSelection(event.target.files?.[0])
                     }
-                    className="block w-full cursor-pointer text-sm text-slate-300 file:mr-4 file:rounded-xl file:border-0 file:bg-emerald-500 file:px-4 file:py-2 file:font-bold file:text-slate-950 hover:file:bg-emerald-400"
+                    className="block w-full cursor-pointer text-sm text-slate-300"
                   />
 
                   <p className="mt-3 text-xs leading-6 text-slate-500">
-                    يمكنك اختيار ملف PDF من الكمبيوتر أو الهاتف. الحد الأقصى للحجم 20MB.
+                    يمكنك اختيار PDF من الكمبيوتر أو الهاتف. الحد الأقصى 20MB.
                   </p>
 
                   {selectedPdfFile && (
-                    <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <div className="font-bold text-emerald-200">
-                            📄 {selectedPdfFile.name}
-                          </div>
-
-                          <div className="mt-1 text-xs text-slate-400">
-                            {(selectedPdfFile.size / 1024 / 1024).toFixed(2)} MB
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPdfFile(null)}
-                          className="rounded-xl bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20"
-                        >
-                          إزالة
-                        </button>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-emerald-400/10 px-4 py-3">
+                      <div>
+                        <p className="font-bold text-emerald-200">
+                          📄 {selectedPdfFile.name}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {(selectedPdfFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
                       </div>
-                    </div>
-                  )}
 
-                  {!selectedPdfFile && editingResource?.pdf_url && (
-                    <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-400">
-                      📎 يوجد PDF مرتبط بهذا المورد حالياً.
-
-                      <span className="mr-1 text-slate-500">
-                        اختر ملفاً جديداً إذا أردت استبداله.
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPdfFile(null)}
+                        className="rounded-xl bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300"
+                      >
+                        إزالة
+                      </button>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* External PDF URL */}
               <div className="md:col-span-2">
                 <label className="mb-2 block text-sm font-bold">
                   🔗 رابط PDF خارجي — اختياري
                 </label>
-
                 <input
                   type="url"
-                  value={
-                    isStoragePath(resourceForm.pdf_url)
-                      ? ""
-                      : resourceForm.pdf_url
-                  }
+                  value={resourceForm.pdf_url}
                   onChange={(event) =>
                     setResourceForm((current) => ({
                       ...current,
@@ -1336,9 +819,8 @@ export default function AdminLibraryPage() {
                   }
                   placeholder="https://..."
                   disabled={Boolean(selectedPdfFile)}
-                  className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 outline-none focus:border-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 outline-none focus:border-emerald-400 disabled:opacity-40"
                 />
-
                 <p className="mt-2 text-xs text-slate-500">
                   إذا رفعت PDF من جهازك، لا تحتاج إلى إدخال رابط هنا.
                 </p>
@@ -1348,7 +830,6 @@ export default function AdminLibraryPage() {
                 <label className="mb-2 block text-sm font-bold">
                   السنة
                 </label>
-
                 <input
                   type="number"
                   value={resourceForm.year}
@@ -1375,12 +856,12 @@ export default function AdminLibraryPage() {
                   }
                   className="h-5 w-5"
                 />
-
                 نشر المورد للطلاب مباشرة
               </label>
             </div>
 
             <button
+              type="button"
               onClick={saveResource}
               disabled={saving || uploadingPdf}
               className="mt-5 rounded-2xl bg-emerald-500 px-6 py-3 font-black text-slate-950 disabled:opacity-50"
@@ -1393,134 +874,6 @@ export default function AdminLibraryPage() {
             </button>
           </section>
         )}
-
-        {/* Resources */}
-        <section className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-black">📄 الموارد</h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                {selectedSubjectId
-                  ? `عرض موارد: ${getSubjectName(selectedSubjectId)}`
-                  : "جميع الموارد حسب الفلتر الحالي"}
-              </p>
-            </div>
-
-            {selectedSubjectId && (
-              <button
-                onClick={() => setSelectedSubjectId("")}
-                className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold hover:bg-white/5"
-              >
-                عرض الكل
-              </button>
-            )}
-          </div>
-
-          {visibleResources.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-10 text-center text-slate-400">
-              لا توجد موارد في هذا القسم حالياً.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {visibleResources.map((resource) => (
-                <article
-                  key={resource.id}
-                  className="rounded-3xl border border-white/10 bg-white/5 p-5"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-xl bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-300">
-                          {getResourceTypeLabel(resource.resource_type)}
-                        </span>
-
-                        <span
-                          className={`rounded-xl px-3 py-1 text-xs font-bold ${
-                            resource.is_published
-                              ? "bg-emerald-500/10 text-emerald-300"
-                              : "bg-slate-500/10 text-slate-400"
-                          }`}
-                        >
-                          {resource.is_published ? "منشور" : "مسودة"}
-                        </span>
-
-                        {resource.year && (
-                          <span className="rounded-xl bg-white/5 px-3 py-1 text-xs text-slate-400">
-                            {resource.year}
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="mt-3 text-lg font-black">
-                        {resource.title}
-                      </h3>
-
-                      <p className="mt-1 text-sm text-cyan-300">
-                        {getSubjectName(resource.subject_id)}
-                      </p>
-
-                      {resource.description && (
-                        <p className="mt-2 text-sm text-slate-400">
-                          {resource.description}
-                        </p>
-                      )}
-
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                        {resource.content && (
-                          <span className="rounded-xl bg-white/5 px-3 py-2">
-                            ✍️ محتوى داخلي
-                          </span>
-                        )}
-
-                        {resource.pdf_url && (
-                          <span className="rounded-xl bg-emerald-500/10 px-3 py-2 text-emerald-300">
-                            📄 PDF مرتبط
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => openEditResource(resource)}
-                        className="rounded-xl bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-                      >
-                        ✏️ تعديل
-                      </button>
-
-                      <button
-                        onClick={() => toggleResource(resource)}
-                        className="rounded-xl bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-                      >
-                        {resource.is_published ? "🙈 إخفاء" : "🌐 نشر"}
-                      </button>
-
-                      {resource.pdf_url &&
-                        !isStoragePath(resource.pdf_url) && (
-                          <a
-                            href={resource.pdf_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-xl bg-cyan-500/10 px-3 py-2 text-sm font-bold text-cyan-300 hover:bg-cyan-500/20"
-                          >
-                            📄 فتح PDF
-                          </a>
-                        )}
-
-                      <button
-                        onClick={() => deleteResource(resource)}
-                        className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-bold text-red-300 hover:bg-red-500/20"
-                      >
-                        🗑️ حذف
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
       </div>
     </main>
   );

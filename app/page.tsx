@@ -18,7 +18,7 @@ const STRUCTURED_DATA = {
   alternateName: "Maris Academy 2027",
   url: SITE_URL,
   description:
-    "منصة تعليمية جزائرية مخصصة لمساعدة تلاميذ بكالوريا 2027 على التعلم وتنظيم الدراسة ومتابعة التقدم.",
+    "MARIS ACADEMY ²⁰²⁷ منصة تعليمية جزائرية لطلبة بكالوريا 2027، تساعد على تنظيم الدراسة، التعلم، إجراء الاختبارات، ومتابعة التقدم الدراسي.",
   areaServed: {
     "@type": "Country",
     name: "Algeria",
@@ -26,6 +26,15 @@ const STRUCTURED_DATA = {
   educationalLevel: "Secondary education",
   educationalUse: "Study",
   inLanguage: "ar-DZ",
+  audience: {
+    "@type": "EducationalAudience",
+    educationalRole: "student",
+  },
+  sameAs: [
+    "https://t.me/bac2027maris",
+    "https://www.youtube.com/@academymaris",
+    "https://www.instagram.com/_maris_academy__/",
+  ],
 };
 
 const FEATURES = [
@@ -164,24 +173,25 @@ export default function LandingPage() {
           />
 
           <p className="badge mx-auto mb-6 animate-fade-up">
-            🇩🇿 منصة جزائرية — بكالوريا 2027
+            🇩🇿 منصة تعليمية جزائرية — بكالوريا 2027
           </p>
 
           <h1
             className="animate-fade-up text-4xl font-extrabold leading-[1.3] text-white sm:text-5xl lg:text-6xl"
             style={{ animationDelay: "80ms" }}
           >
-            ذاكر بذكاء،
+            منصة بكالوريا 2027
             <br />
-            <span className="text-gradient">وتقدّم بثبات.</span>
+            <span className="text-gradient">ذاكر بذكاء، وتقدّم بثبات.</span>
           </h1>
 
           <p
             className="mx-auto mt-6 max-w-2xl animate-fade-up text-base leading-relaxed text-foam/70 sm:text-lg"
             style={{ animationDelay: "160ms" }}
           >
-            منصة تعليمية متكاملة لمساعدة تلاميذ بكالوريا 2027 على
-            تنظيم دراستهم، متابعة تقدمهم، والتعلم بطريقة تفاعلية.
+            MARIS ACADEMY ²⁰²⁷ هي منصة تعليمية جزائرية مخصصة لطلبة
+            بكالوريا 2027، تساعدك على تنظيم الدراسة، التعلم بطريقة
+            تفاعلية، إجراء الاختبارات، ومتابعة تقدمك الدراسي.
           </p>
 
           <div
@@ -247,6 +257,43 @@ export default function LandingPage() {
                 </p>
               </article>
             ))}
+          </div>
+        </section>
+
+        {/* ═══ معلومات إضافية لمحركات البحث والزوار ═══ */}
+        <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24 sm:px-6">
+          <div className="glass-card p-6 sm:p-8">
+            <h2 className="text-2xl font-extrabold text-white sm:text-3xl">
+              MARIS ACADEMY لبكالوريا 2027 في الجزائر
+            </h2>
+
+            <div className="mt-5 space-y-4 text-sm leading-8 text-foam/60 sm:text-base">
+              <p>
+                إذا كنت تستعد لـ{" "}
+                <strong className="text-white">
+                  بكالوريا 2027 في الجزائر
+                </strong>
+                ، فإن MARIS ACADEMY توفر لك بيئة تعليمية تساعدك على تنظيم
+                رحلتك الدراسية ومتابعة مستواك بشكل مستمر.
+              </p>
+
+              <p>
+                المنصة تجمع بين{" "}
+                <strong className="text-white">
+                  الدروس والاختبارات وتتبع التقدم والتحديات والإنجازات
+                </strong>
+                ، حتى تتمكن من بناء عادة دراسية أكثر انتظامًا والاستعداد
+                للبكالوريا خطوة بخطوة.
+              </p>
+
+              <p>
+                MARIS ACADEMY ²⁰²⁷ موجهة لتلاميذ{" "}
+                <strong className="text-white">
+                  بكالوريا الجزائر 2027
+                </strong>
+                ، مع تجربة رقمية مصممة لتكون بسيطة، منظمة، وتفاعلية.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -344,11 +391,12 @@ export default function LandingPage() {
             <span className="font-grotesk tracking-widest">
               MARIS ACADEMY ²⁰²⁷
             </span>{" "}
-            — صُنعت لتلاميذ البكالوريا في الجزائر
+            — منصة تعليمية لتلاميذ بكالوريا 2027 في الجزائر
           </p>
         </footer>
       </main>
     </>
   );
 }
+
 

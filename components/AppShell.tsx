@@ -109,7 +109,6 @@ function isActive(
 
 // ══════════════════════════════════════════════════════
 // فحص صلاحية الأدمن
-// هذا الفحص لا يمنع ظهور المنصة
 // ══════════════════════════════════════════════════════
 
 async function checkAdmin(
@@ -117,6 +116,7 @@ async function checkAdmin(
   userId: string
 ): Promise<boolean> {
   try {
+    // الفحص الأساسي من profiles
     const {
       data: profile,
       error: profileError,
@@ -138,14 +138,16 @@ async function checkAdmin(
       "is_current_user_admin"
     );
 
-    if (rpcError) {
-      console.error(
-        "Admin RPC check error:",
-        rpcError
-      );
+    if (!rpcError) {
+      return rpcData === true;
     }
 
-    return rpcData === true;
+    console.error(
+      "Admin RPC check error:",
+      rpcError
+    );
+
+    return false;
   } catch (error) {
     console.error(
       "Admin check error:",
@@ -177,6 +179,22 @@ export default function AppShell({
     useState(false);
 
   // ══════════════════════════════════════════════════════
+  // فحص الأدمن
+  // ══════════════════════════════════════════════════════
+
+  async function refreshAdminStatus(
+    supabase: SupabaseClient,
+    userId: string
+  ) {
+    const adminStatus = await checkAdmin(
+      supabase,
+      userId
+    );
+
+    setIsAdmin(adminStatus);
+  }
+
+  // ══════════════════════════════════════════════════════
   // المصادقة
   // ══════════════════════════════════════════════════════
 
@@ -194,10 +212,6 @@ export default function AppShell({
 
     async function initialize() {
       try {
-        // ──────────────────────────────────────────────
-        // أولاً: نتحقق من الجلسة فقط
-        // ──────────────────────────────────────────────
-
         const currentSession =
           await getSession(supabase);
 
@@ -212,26 +226,20 @@ export default function AppShell({
           return;
         }
 
-        // ──────────────────────────────────────────────
-        // الجلسة صحيحة → افتح المنصة فورًا
-        // ──────────────────────────────────────────────
-
+        // الجلسة صحيحة
         setSession(currentSession);
         setChecking(false);
 
-        // ──────────────────────────────────────────────
-        // فحص الأدمن في الخلفية
-        // لا يمنع فتح المنصة
-        // ──────────────────────────────────────────────
+        // فحص الأدمن
+        const adminStatus =
+          await checkAdmin(
+            supabase,
+            currentSession.user.id
+          );
 
-        checkAdmin(
-          supabase,
-          currentSession.user.id
-        ).then((adminStatus) => {
-          if (!mounted) return;
+        if (!mounted) return;
 
-          setIsAdmin(adminStatus);
-        });
+        setIsAdmin(adminStatus);
       } catch (error) {
         console.error(
           "AppShell session initialization error:",
@@ -257,10 +265,9 @@ export default function AppShell({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
-      (_event, currentSession) => {
+      async (_event, currentSession) => {
         if (!mounted) return;
 
-        // إذا خرج المستخدم
         if (!currentSession) {
           setSession(null);
           setIsAdmin(false);
@@ -270,22 +277,18 @@ export default function AppShell({
           return;
         }
 
-        // ──────────────────────────────────────────────
-        // لا نرجع checking = true هنا
-        // لأن المنصة مفتوحة أصلًا
-        // ──────────────────────────────────────────────
-
         setSession(currentSession);
 
-        // فحص الأدمن في الخلفية فقط
-        checkAdmin(
-          supabase,
-          currentSession.user.id
-        ).then((adminStatus) => {
-          if (!mounted) return;
+        // إعادة فحص الأدمن عند تغير الجلسة
+        const adminStatus =
+          await checkAdmin(
+            supabase,
+            currentSession.user.id
+          );
 
-          setIsAdmin(adminStatus);
-        });
+        if (!mounted) return;
+
+        setIsAdmin(adminStatus);
       }
     );
 
@@ -294,6 +297,73 @@ export default function AppShell({
       subscription.unsubscribe();
     };
   }, [router]);
+
+// ══════════════════════════════════════════════════════
+// إعادة فحص الأدمن عند الرجوع للتطبيق
+// مفيد جدًا في الهاتف
+// ══════════════════════════════════════════════════════
+
+useEffect(() => {
+  const supabase = getSupabase();
+
+  if (!supabase || !session?.user?.id) {
+    return;
+  }
+
+  const currentSupabase = supabase;
+  const userId = session.user.id;
+
+  async function handleVisibilityChange() {
+    if (
+      document.visibilityState !== "visible"
+    ) {
+      return;
+    }
+
+    try {
+      const {
+        data: {
+          session: currentSession,
+        },
+      } =
+        await currentSupabase.auth.getSession();
+
+      if (!currentSession) {
+        setSession(null);
+        setIsAdmin(false);
+        router.replace("/login");
+        return;
+      }
+
+      setSession(currentSession);
+
+      await refreshAdminStatus(
+        currentSupabase,
+        userId
+      );
+    } catch (error) {
+      console.error(
+        "Admin refresh error:",
+        error
+      );
+    }
+  }
+
+  document.addEventListener(
+    "visibilitychange",
+    handleVisibilityChange
+  );
+
+  return () => {
+    document.removeEventListener(
+      "visibilitychange",
+      handleVisibilityChange
+    );
+  };
+}, [
+  router,
+  session?.user?.id,
+]);
 
   // ══════════════════════════════════════════════════════
   // إغلاق القائمة عند تغيير الصفحة
@@ -357,7 +427,7 @@ export default function AppShell({
   }
 
   // ══════════════════════════════════════════════════════
-  // التحقق من الجلسة فقط
+  // التحقق من الجلسة
   // ══════════════════════════════════════════════════════
 
   if (checking || !session) {

@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { Document, Page, pdfjs } from "react-pdf";
+
 import { getSupabase } from "@/lib/supabase";
 import { getSession, getProfile } from "@/services/auth";
+
+import "react-pdf/dist/Page/TextLayer.css";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 type Resource = {
   id: string;
@@ -51,7 +61,7 @@ function isStoragePath(value: string | null) {
 function cleanStoragePath(value: string) {
   return value
     .replace(/^library-pdfs[\\/]/, "")
-    .replace(/^\/+/, "");
+    .replace(/^[/\\]+/, "");
 }
 
 function getFileName(path: string) {
@@ -67,12 +77,48 @@ export default function LibraryResourcePage() {
 
   const resourceId = String(params.resourceId);
 
+  const viewerRef = useRef<HTMLDivElement | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [resource, setResource] = useState<Resource | null>(null);
   const [subject, setSubject] = useState<Subject | null>(null);
+
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+
+  const [pdfPages, setPdfPages] = useState(0);
+  const [pdfWidth, setPdfWidth] = useState(0);
+
   const [error, setError] = useState("");
+  const [pdfError, setPdfError] = useState("");
+
+  useEffect(() => {
+    const element = viewerRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    const updateWidth = () => {
+      const width = element.clientWidth;
+
+      if (width > 0) {
+        setPdfWidth(Math.min(width - 16, 1000));
+      }
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(() => {
+      updateWidth();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [pdfUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +127,9 @@ export default function LibraryResourcePage() {
       try {
         setLoading(true);
         setError("");
+        setPdfError("");
+        setPdfUrl(null);
+        setPdfPages(0);
 
         const supabase = getSupabase();
 
@@ -167,7 +216,9 @@ export default function LibraryResourcePage() {
 
         /*
          * PDF مخزن في Supabase Storage.
-         * مهم: لا نرسل download هنا حتى يفتح PDF داخل المتصفح.
+         *
+         * نستعمل Signed URL فقط للعرض داخل React PDF Viewer.
+         * لا نستعمل download هنا.
          */
         if (resourceData.pdf_url && isStoragePath(resourceData.pdf_url)) {
           setPdfLoading(true);
@@ -183,7 +234,7 @@ export default function LibraryResourcePage() {
             console.error("Signed PDF URL error:", signedError);
 
             if (!cancelled) {
-              setError("تعذر فتح ملف PDF حالياً.");
+              setPdfError("تعذر تجهيز ملف PDF حالياً.");
             }
           } else if (!cancelled) {
             setPdfUrl(signedData.signedUrl);
@@ -341,14 +392,16 @@ export default function LibraryResourcePage() {
                 <h2 className="font-bold">📄 ملف PDF</h2>
 
                 <p className="mt-1 text-xs text-slate-500">
-                  يمكنك قراءة الملف مباشرة أو تحميله.
+                  يمكنك قراءة الملف مباشرة داخل المنصة أو تحميله.
                 </p>
               </div>
 
               {pdfUrl && (
                 <a
                   href={pdfUrl}
-                  download={getFileName(resource.pdf_url || "document.pdf")}
+                  download={getFileName(
+                    resource.pdf_url || "document.pdf"
+                  )}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-5 py-3 text-sm font-bold text-white transition hover:bg-cyan-400"
                 >
                   ⬇️ تحميل PDF
@@ -368,12 +421,104 @@ export default function LibraryResourcePage() {
                   </div>
                 </div>
               ) : pdfUrl ? (
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-white">
-                  <iframe
-                    src={pdfUrl}
-                    title={resource.title}
-                    className="h-[70vh] min-h-[500px] w-full sm:h-[80vh]"
-                  />
+                <div
+                  ref={viewerRef}
+                  className="overflow-hidden rounded-2xl border border-white/10 bg-slate-200 p-2 sm:p-4"
+                >
+                  {pdfError ? (
+                    <div className="flex min-h-[300px] items-center justify-center rounded-xl bg-[#06131f]">
+                      <div className="px-5 text-center">
+                        <div className="mb-3 text-4xl">📄</div>
+
+                        <p className="text-sm text-red-300">
+                          {pdfError}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <Document
+                      file={pdfUrl}
+                      loading={
+                        <div className="flex min-h-[500px] items-center justify-center bg-[#06131f]">
+                          <div className="text-center">
+                            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-cyan-400" />
+
+                            <p className="text-sm text-slate-400">
+                              جاري تحميل صفحات PDF...
+                            </p>
+                          </div>
+                        </div>
+                      }
+                      error={
+                        <div className="flex min-h-[300px] items-center justify-center bg-[#06131f]">
+                          <div className="px-5 text-center">
+                            <div className="mb-3 text-4xl">⚠️</div>
+
+                            <p className="text-sm text-red-300">
+                              تعذر عرض ملف PDF داخل المنصة.
+                            </p>
+
+                            <a
+                              href={pdfUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-4 inline-flex rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200"
+                            >
+                              فتح الملف مباشرة
+                            </a>
+                          </div>
+                        </div>
+                      }
+                      onLoadSuccess={({ numPages }) => {
+                        setPdfPages(numPages);
+                        setPdfError("");
+                      }}
+                      onLoadError={(pdfLoadError) => {
+                        console.error(
+                          "PDF viewer error:",
+                          pdfLoadError
+                        );
+
+                        setPdfError(
+                          "تعذر عرض ملف PDF داخل المنصة."
+                        );
+                      }}
+                    >
+                      <div className="flex flex-col items-center gap-4">
+                        {Array.from(
+                          { length: pdfPages },
+                          (_, index) => (
+                            <div
+                              key={`page_${index + 1}`}
+                              className="overflow-hidden rounded-lg bg-white shadow-2xl"
+                            >
+                              {pdfWidth > 0 && (
+                                <Page
+                                  pageNumber={index + 1}
+                                  width={pdfWidth}
+                                  renderTextLayer
+                                  renderAnnotationLayer
+                                  loading={
+                                    <div
+                                      className="flex items-center justify-center bg-white"
+                                      style={{
+                                        width: pdfWidth,
+                                        minHeight: 300,
+                                      }}
+                                    >
+                                      <div className="text-sm text-slate-500">
+                                        جاري تحميل الصفحة...
+                                      </div>
+                                    </div>
+                                  }
+                                />
+                              )}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </Document>
+                  )}
                 </div>
               ) : (
                 <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02]">

@@ -1,4 +1,3 @@
-
 import type { Metadata, Viewport } from "next";
 import { Tajawal, Space_Grotesk } from "next/font/google";
 import "./globals.css";
@@ -67,6 +66,14 @@ export const metadata: Metadata = {
     title: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027",
     description:
       "منصة تعليمية لبكالوريا 2027 في الجزائر، مع الدروس والكورسات والفيديوهات والاختبارات ومتابعة تقدم الطالب.",
+    images: [
+      {
+        url: "/images/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027 في الجزائر",
+      },
+    ],
   },
 
   twitter: {
@@ -74,6 +81,14 @@ export const metadata: Metadata = {
     title: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027",
     description:
       "منصة تعليمية لبكالوريا 2027 تساعد الطلبة على التعلم وتنظيم الدراسة ومتابعة التقدم.",
+    images: [
+      {
+        url: "/images/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027 في الجزائر",
+      },
+    ],
   },
 
   robots: {
@@ -96,7 +111,6 @@ export const viewport: Viewport = {
   themeColor: "#020b18",
 };
 
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -108,13 +122,13 @@ export default function RootLayout({
           content="vY8Qs4Coc8ayudp_wgNssXcdXdtsqTG1DWQf_HyLhRs"
         />
       </head>
+
       <body className={`${tajawal.variable} ${grotesk.variable}`}>
         {children}
       </body>
     </html>
   );
 }
-
 
 
 

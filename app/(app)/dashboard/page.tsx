@@ -187,7 +187,10 @@ export default function DashboardPage() {
     <main dir="rtl" className="px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-8">
         {/* HERO */}
-        <section className="relative overflow-hidden rounded-3xl border border-cyan-400/15 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-2xl shadow-cyan-950/20 sm:p-8">
+        <section
+          data-tour="dashboard-hero"
+          className="relative overflow-hidden rounded-3xl border border-cyan-400/15 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-6 text-white shadow-2xl shadow-cyan-950/20 sm:p-8"
+        >
           <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-32 -right-20 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl" />
 
@@ -232,7 +235,10 @@ export default function DashboardPage() {
         )}
 
         {/* QUICK STATS */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <section
+          data-tour="dashboard-progress"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        >
           <div className="group rounded-3xl border border-cyan-400/10 bg-slate-900/60 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-cyan-400/25">
             <div className="flex items-center justify-between">
               <div>
@@ -292,7 +298,7 @@ export default function DashboardPage() {
         </section>
 
         {/* ANNOUNCEMENTS */}
-        <section>
+        <section data-tour="dashboard-announcements">
           <div className="mb-4">
             <h2 className="text-xl font-black text-slate-900">
               📢 آخر الإعلانات
@@ -363,7 +369,7 @@ export default function DashboardPage() {
         </section>
 
         {/* NEXT LESSON */}
-        <section>
+        <section data-tour="dashboard-next-lesson">
           <div className="mb-4">
             <h2 className="text-xl font-black text-slate-900">
               🎯 تابع من حيث توقفت
@@ -422,7 +428,7 @@ export default function DashboardPage() {
         </section>
 
         {/* COURSES */}
-        <section>
+        <section data-tour="dashboard-courses">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <h2 className="text-xl font-black text-slate-900">
@@ -525,7 +531,7 @@ export default function DashboardPage() {
         </section>
 
         {/* QUICK ACTIONS */}
-        <section>
+        <section data-tour="dashboard-quick-links">
           <div className="mb-4">
             <h2 className="text-xl font-black text-slate-900">
               ⚡ الوصول السريع
@@ -587,7 +593,6 @@ export default function DashboardPage() {
     </main>
   );
 }
-
 
 
 

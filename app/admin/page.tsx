@@ -53,9 +53,7 @@ export default function AdminPage() {
     forumPosts: 0,
   });
 
-  const [recentStudents, setRecentStudents] = useState<RecentStudent[]>(
-    []
-  );
+  const [recentStudents, setRecentStudents] = useState<RecentStudent[]>([]);
 
   async function loadDashboard() {
     try {
@@ -126,37 +124,14 @@ export default function AdminPage() {
           .select("id", { count: "exact", head: true }),
       ]);
 
-      if (adminStudentsResult.error) {
-        throw adminStudentsResult.error;
-      }
-
-      if (coursesResult.error) {
-        throw coursesResult.error;
-      }
-
-      if (lessonsResult.error) {
-        throw lessonsResult.error;
-      }
-
-      if (quizzesResult.error) {
-        throw quizzesResult.error;
-      }
-
-      if (reelsResult.error) {
-        throw reelsResult.error;
-      }
-
-      if (achievementsResult.error) {
-        throw achievementsResult.error;
-      }
-
-      if (reviewsResult.error) {
-        throw reviewsResult.error;
-      }
-
-      if (forumPostsResult.error) {
-        throw forumPostsResult.error;
-      }
+      if (adminStudentsResult.error) throw adminStudentsResult.error;
+      if (coursesResult.error) throw coursesResult.error;
+      if (lessonsResult.error) throw lessonsResult.error;
+      if (quizzesResult.error) throw quizzesResult.error;
+      if (reelsResult.error) throw reelsResult.error;
+      if (achievementsResult.error) throw achievementsResult.error;
+      if (reviewsResult.error) throw reviewsResult.error;
+      if (forumPostsResult.error) throw forumPostsResult.error;
 
       const allStudents =
         (adminStudentsResult.data ?? []) as AdminStudent[];
@@ -196,7 +171,7 @@ export default function AdminPage() {
       await loadDashboard();
     }
 
-    start();
+    void start();
 
     return () => {
       mounted = false;
@@ -264,6 +239,32 @@ export default function AdminPage() {
               </p>
             </div>
           </div>
+
+          {/* FLASHCARDS OVERVIEW BUTTON */}
+          <Link
+            href="/admin/flashcards"
+            className="group mb-4 flex items-center justify-between gap-4 rounded-2xl border border-violet-400/20 bg-gradient-to-l from-violet-500/10 to-cyan-500/5 p-5 transition hover:border-violet-400/40 hover:bg-violet-400/10"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-400/10 text-2xl transition group-hover:scale-105">
+                🧠
+              </div>
+
+              <div>
+                <h3 className="font-bold text-white">
+                  إدارة حفظني
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  إضافة وتعديل ونشر بطاقات الحفظ
+                </p>
+              </div>
+            </div>
+
+            <span className="text-lg text-violet-300 transition group-hover:-translate-x-1">
+              ←
+            </span>
+          </Link>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
@@ -390,6 +391,12 @@ export default function AdminPage() {
             />
 
             <QuickAction
+              href="/admin/flashcards"
+              icon="🧠"
+              title="إدارة حفظني"
+            />
+
+            <QuickAction
               href="/admin/quizzes"
               icon="📝"
               title="إدارة الاختبارات"
@@ -477,8 +484,7 @@ export default function AdminPage() {
 
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-white">
-                        {student.first_name ||
-                        student.last_name
+                        {student.first_name || student.last_name
                           ? `${student.first_name ?? ""} ${
                               student.last_name ?? ""
                             }`.trim()
@@ -497,15 +503,13 @@ export default function AdminPage() {
                     </p>
 
                     <p className="mt-1 text-xs font-medium text-slate-300">
-                      {new Date(
-                        student.created_at
-                      ).toLocaleDateString("ar-DZ")}
+                      {new Date(student.created_at).toLocaleDateString(
+                        "ar-DZ"
+                      )}
                     </p>
                   </div>
 
-                  <span className="text-cyan-400">
-                    ←
-                  </span>
+                  <span className="text-cyan-400">←</span>
                 </Link>
               ))}
             </div>
@@ -587,9 +591,7 @@ function StatCard({
             {title}
           </p>
 
-          <p
-            className={`mt-2 text-3xl font-bold ${style.value}`}
-          >
+          <p className={`mt-2 text-3xl font-bold ${style.value}`}>
             {value}
           </p>
 
@@ -630,13 +632,8 @@ function QuickAction({
         {title}
       </span>
 
-      <span className="mr-auto text-xs text-slate-600">
-        ←
-      </span>
+      <span className="mr-auto text-xs text-slate-600">←</span>
     </Link>
   );
 }
-
-
-
 

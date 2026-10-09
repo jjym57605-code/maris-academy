@@ -1,13 +1,14 @@
 
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 
 type Subject = "history" | "geography";
 type CardType = "term" | "personality" | "date";
+type PersonalityGroup = "western" | "eastern" | "third_world";
 
 type Flashcard = {
   id: string;
@@ -18,6 +19,9 @@ type Flashcard = {
   back_content: string;
   image_url: string | null;
   sort_order: number;
+  unit_name: string | null;
+  personality_group: string | null;
+  unit_number: number | null;
   is_active: boolean;
   created_at: string;
 };
@@ -30,6 +34,8 @@ type CardForm = {
   back_content: string;
   image_url: string;
   sort_order: string;
+  unit_name: string;
+  personality_group: PersonalityGroup | "";
   is_active: boolean;
 };
 
@@ -41,6 +47,8 @@ const emptyForm: CardForm = {
   back_content: "",
   image_url: "",
   sort_order: "0",
+  unit_name: "",
+  personality_group: "",
   is_active: true,
 };
 
@@ -48,6 +56,12 @@ const typeLabels: Record<CardType, string> = {
   term: "مصطلح",
   personality: "شخصية",
   date: "تاريخ",
+};
+
+const groupLabels: Record<PersonalityGroup, string> = {
+  western: "المعسكر الغربي",
+  eastern: "المعسكر الشرقي",
+  third_world: "العالم الثالث",
 };
 
 export default function AdminFlashcardsPage() {
@@ -59,9 +73,12 @@ export default function AdminFlashcardsPage() {
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [form, setForm] = useState<CardForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterType, setFilterType] = useState("all");
+  const [filterUnit, setFilterUnit] = useState("all");
   const [search, setSearch] = useState("");
+
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -97,7 +114,7 @@ export default function AdminFlashcardsPage() {
       const { data, error } = await supabase
         .from("flashcards")
         .select(
-          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, is_active, created_at"
+          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, unit_name, personality_group, unit_number, is_active, created_at"
         )
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false });
@@ -107,7 +124,9 @@ export default function AdminFlashcardsPage() {
       setCards((data ?? []) as Flashcard[]);
     } catch (error) {
       console.error("ADMIN FLASHCARDS ERROR:", error);
-      setErrorMessage("تعذر تحميل البطاقات. تحقق من الاتصال بقاعدة البيانات.");
+      setErrorMessage(
+        "تعذر تحميل البطاقات. تحقق من الاتصال بقاعدة البيانات."
+      );
     } finally {
       setLoading(false);
     }
@@ -115,6 +134,7 @@ export default function AdminFlashcardsPage() {
 
   useEffect(() => {
     void loadCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function updateForm<K extends keyof CardForm>(
@@ -126,6 +146,11 @@ export default function AdminFlashcardsPage() {
 
       if (key === "subject" && value === "geography") {
         next.card_type = "term";
+        next.personality_group = "";
+      }
+
+      if (key === "card_type" && value !== "personality") {
+        next.personality_group = "";
       }
 
       return next;
@@ -139,8 +164,22 @@ export default function AdminFlashcardsPage() {
     setErrorMessage("");
   }
 
+  function getCardUnitName(card: Flashcard) {
+    return card.unit_name?.trim() ||
+      (card.unit_number !== null ? `الوحدة ${card.unit_number}` : "");
+  }
+
   function startEditing(card: Flashcard) {
     setEditingId(card.id);
+
+    const savedGroup = card.personality_group;
+    const validGroup =
+      savedGroup === "western" ||
+      savedGroup === "eastern" ||
+      savedGroup === "third_world"
+        ? savedGroup
+        : "";
+
     setForm({
       subject: card.subject,
       card_type: card.card_type,
@@ -149,18 +188,18 @@ export default function AdminFlashcardsPage() {
       back_content: card.back_content,
       image_url: card.image_url ?? "",
       sort_order: String(card.sort_order),
+      unit_name: getCardUnitName(card),
+      personality_group: validGroup,
       is_active: card.is_active,
     });
 
     setMessage("");
     setErrorMessage("");
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setMessage("");
     setErrorMessage("");
 
@@ -180,11 +219,26 @@ export default function AdminFlashcardsPage() {
       return;
     }
 
+    if (!form.unit_name.trim()) {
+      setErrorMessage("اكتب اسم الوحدة، مثلاً: الوحدة 1.");
+      return;
+    }
+
+    if (
+      form.card_type === "personality" &&
+      !form.personality_group
+    ) {
+      setErrorMessage("اختار المعسكر الذي تنتمي إليه الشخصية.");
+      return;
+    }
+
     if (
       form.image_url.trim() &&
       !/^https?:\/\/\S+$/i.test(form.image_url.trim())
     ) {
-      setErrorMessage("رابط الصورة غير صالح. استعمل رابطًا يبدأ بـ https:// أو http://");
+      setErrorMessage(
+        "رابط الصورة غير صالح. استعمل رابطًا يبدأ بـ https:// أو http://"
+      );
       return;
     }
 
@@ -199,6 +253,13 @@ export default function AdminFlashcardsPage() {
         back_content: form.back_content.trim(),
         image_url: form.image_url.trim() || null,
         sort_order: Math.max(0, Number(form.sort_order) || 0),
+        unit_name: form.unit_name.trim(),
+        personality_group:
+          form.card_type === "personality"
+            ? form.personality_group || null
+            : null,
+        // العمود القديم لم يعد مستعملاً في النظام الجديد.
+        unit_number: null,
         is_active: form.is_active,
         updated_at: new Date().toISOString(),
       };
@@ -241,7 +302,9 @@ export default function AdminFlashcardsPage() {
       await loadCards();
     } catch (error) {
       console.error("SAVE FLASHCARD ERROR:", error);
-      setErrorMessage("ما قدرناش نحفظو البطاقة. تحقق من صلاحيات Supabase وحاول مجددًا.");
+      setErrorMessage(
+        "ما قدرناش نحفظو البطاقة. تحقق من صلاحيات Supabase وحاول مجددًا."
+      );
     } finally {
       setSaving(false);
     }
@@ -309,6 +372,14 @@ export default function AdminFlashcardsPage() {
     await loadCards();
   }
 
+  const unitNames = Array.from(
+    new Set(
+      cards
+        .map(getCardUnitName)
+        .filter((unitName) => unitName.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "ar"));
+
   const filteredCards = cards.filter((card) => {
     const matchesSubject =
       filterSubject === "all" || card.subject === filterSubject;
@@ -316,11 +387,14 @@ export default function AdminFlashcardsPage() {
     const matchesType =
       filterType === "all" || card.card_type === filterType;
 
+    const matchesUnit =
+      filterUnit === "all" || getCardUnitName(card) === filterUnit;
+
     const matchesSearch =
       !search.trim() ||
       card.title.toLowerCase().includes(search.trim().toLowerCase());
 
-    return matchesSubject && matchesType && matchesSearch;
+    return matchesSubject && matchesType && matchesUnit && matchesSearch;
   });
 
   if (loading) {
@@ -357,8 +431,8 @@ export default function AdminFlashcardsPage() {
             </h1>
 
             <p className="mt-3 text-sm leading-7 text-slate-400">
-              أنشئ بطاقات التاريخ والجغرافيا، وعدّل محتواها وتحكّم في نشرها.
-              هذا القسم مستقل عن الاختبارات.
+              أنشئ بطاقات التاريخ والجغرافيا، واكتب اسم الوحدة وصنّف
+              الشخصيات حسب المعسكر، ثم تحكّم في محتواها ونشرها.
             </p>
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -394,7 +468,7 @@ export default function AdminFlashcardsPage() {
                 {editingId ? "✏️ تعديل بطاقة" : "➕ إضافة بطاقة جديدة"}
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                اكتب ما يظهر في الوجه الأمامي وما يظهر عند قلب البطاقة.
+                حدّد المادة والنوع واكتب اسم الوحدة ومحتوى الوجهين.
               </p>
             </div>
 
@@ -442,6 +516,40 @@ export default function AdminFlashcardsPage() {
                 </select>
               </Field>
             </div>
+
+            <Field label="اسم الوحدة">
+              <input
+                value={form.unit_name}
+                onChange={(event) =>
+                  updateForm("unit_name", event.target.value)
+                }
+                placeholder="مثال: الوحدة 1 أو الحرب الباردة"
+                className={inputClass}
+                maxLength={120}
+                required
+              />
+            </Field>
+
+            {form.card_type === "personality" && (
+              <Field label="المعسكر الذي تنتمي إليه الشخصية">
+                <select
+                  value={form.personality_group}
+                  onChange={(event) =>
+                    updateForm(
+                      "personality_group",
+                      event.target.value as PersonalityGroup | ""
+                    )
+                  }
+                  className={inputClass}
+                  required
+                >
+                  <option value="">اختار المعسكر</option>
+                  <option value="western">المعسكر الغربي</option>
+                  <option value="eastern">المعسكر الشرقي</option>
+                  <option value="third_world">العالم الثالث</option>
+                </select>
+              </Field>
+            )}
 
             <Field label="عنوان البطاقة">
               <input
@@ -547,11 +655,11 @@ export default function AdminFlashcardsPage() {
               📚 البطاقات الموجودة
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              عدّل البطاقات أو انشرها أو أخفها أو احذفها.
+              ابحث حسب العنوان، أو صفِّ البطاقات بالمادة والنوع والوحدة.
             </p>
           </div>
 
-          <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -579,6 +687,19 @@ export default function AdminFlashcardsPage() {
               <option value="personality">شخصيات</option>
               <option value="date">تواريخ</option>
             </select>
+
+            <select
+              value={filterUnit}
+              onChange={(event) => setFilterUnit(event.target.value)}
+              className={inputClass}
+            >
+              <option value="all">كل الوحدات</option>
+              {unitNames.map((unitName) => (
+                <option key={unitName} value={unitName}>
+                  {unitName}
+                </option>
+              ))}
+            </select>
           </div>
 
           {filteredCards.length === 0 ? (
@@ -604,10 +725,26 @@ export default function AdminFlashcardsPage() {
                         <Tag>
                           {card.subject === "history" ? "التاريخ" : "الجغرافيا"}
                         </Tag>
+
                         <Tag>{typeLabels[card.card_type]}</Tag>
+
                         <Tag>
-                          {card.is_active ? "منشورة" : "مخفية"}
+                          {getCardUnitName(card) || "وحدة غير محددة"}
                         </Tag>
+
+                        {card.card_type === "personality" &&
+                          card.personality_group &&
+                          card.personality_group in groupLabels && (
+                            <Tag>
+                              {
+                                groupLabels[
+                                  card.personality_group as PersonalityGroup
+                                ]
+                              }
+                            </Tag>
+                          )}
+
+                        <Tag>{card.is_active ? "منشورة" : "مخفية"}</Tag>
                       </div>
 
                       <h3 className="break-words text-lg font-bold text-white">
@@ -688,7 +825,7 @@ function Field({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block space-y-2">
@@ -713,11 +850,10 @@ function SummaryCard({
   );
 }
 
-function Tag({ children }: { children: React.ReactNode }) {
+function Tag({ children }: { children: ReactNode }) {
   return (
     <span className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-300">
       {children}
     </span>
   );
 }
-

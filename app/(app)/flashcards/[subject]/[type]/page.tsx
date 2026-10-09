@@ -8,6 +8,7 @@ import { getSupabase } from "@/lib/supabase";
 
 type Subject = "history" | "geography";
 type CardType = "term" | "personality" | "date";
+type PersonalityGroup = "western" | "eastern" | "third_world";
 type ProgressStatus = "new" | "learning" | "known";
 type SlideDirection = -1 | 1;
 
@@ -20,6 +21,9 @@ type Flashcard = {
   back_content: string;
   image_url: string | null;
   sort_order: number;
+  unit_name: string | null;
+  personality_group: string | null;
+  unit_number: number | null;
 };
 
 type CardProgress = {
@@ -37,6 +41,12 @@ const TYPE_INFO: Record<CardType, { title: string; icon: string }> = {
   term: { title: "المصطلحات", icon: "📚" },
   personality: { title: "الشخصيات", icon: "👤" },
   date: { title: "التواريخ", icon: "📅" },
+};
+
+const PERSONALITY_GROUPS: Record<PersonalityGroup, string> = {
+  western: "المعسكر الغربي",
+  eastern: "المعسكر الشرقي",
+  third_world: "العالم الثالث",
 };
 
 const SLIDE_DURATION = 720;
@@ -67,6 +77,9 @@ export default function FlashcardStudyPage() {
   const [progress, setProgress] = useState<Record<string, CardProgress>>({});
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [selectedUnit, setSelectedUnit] = useState("all");
+  const [selectedPersonalityGroup, setSelectedPersonalityGroup] =
+    useState("all");
   const [slideDirection, setSlideDirection] =
     useState<SlideDirection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +92,36 @@ export default function FlashcardStudyPage() {
   const slideLockRef = useRef(false);
 
   const isSliding = slideDirection !== null;
+
+  // إرجاع اسم الوحدة، مع دعم البطاقات القديمة التي تستعمل رقم الوحدة.
+  function getCardUnitName(card: Flashcard): string {
+    return (
+      card.unit_name?.trim() ||
+      (card.unit_number !== null ? `الوحدة ${card.unit_number}` : "")
+    );
+  }
+
+  // استخراج أسماء الوحدات الموجودة فعليًا في البطاقات المنشورة.
+  const units = Array.from(
+    new Set(
+      cards
+        .map(getCardUnitName)
+        .filter((unitName) => unitName.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b, "ar"));
+
+  // تصفية البطاقات حسب الوحدة والمعسكر عند مراجعة الشخصيات.
+  const filteredCards = cards.filter((card) => {
+    const matchesUnit =
+      selectedUnit === "all" || getCardUnitName(card) === selectedUnit;
+
+    const matchesGroup =
+      cardType !== "personality" ||
+      selectedPersonalityGroup === "all" ||
+      card.personality_group === selectedPersonalityGroup;
+
+    return matchesUnit && matchesGroup;
+  });
 
   const loadCards = useCallback(async () => {
     if (!validCombination || !subject || !cardType) {
@@ -112,7 +155,7 @@ export default function FlashcardStudyPage() {
       const { data: cardsData, error: cardsError } = await supabase
         .from("flashcards")
         .select(
-          "id, subject, card_type, title, front_content, back_content, image_url, sort_order"
+          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, unit_name, personality_group, unit_number"
         )
         .eq("subject", subject)
         .eq("card_type", cardType)
@@ -125,6 +168,8 @@ export default function FlashcardStudyPage() {
       const loadedCards = (cardsData ?? []) as Flashcard[];
 
       setCards(loadedCards);
+      setSelectedUnit("all");
+      setSelectedPersonalityGroup("all");
       setIndex(0);
       setFlipped(false);
       setSlideDirection(null);
@@ -170,6 +215,17 @@ export default function FlashcardStudyPage() {
     void loadCards();
   }, [loadCards]);
 
+  // إعادة العرض من البطاقة الأولى عند تغيير الوحدة أو المعسكر.
+  useEffect(() => {
+    setIndex(0);
+    setFlipped(false);
+    setSlideDirection(null);
+    slideLockRef.current = false;
+    setNotice(null);
+    setError(null);
+  }, [selectedUnit, selectedPersonalityGroup]);
+
+  // حركة الانتقال ثلاثية الأبعاد بين البطاقات.
   useEffect(() => {
     if (slideDirection === null) return;
 
@@ -187,7 +243,10 @@ export default function FlashcardStudyPage() {
       if (cancelled) return;
 
       setIndex((current) =>
-        Math.max(0, Math.min(cards.length - 1, current + direction))
+        Math.max(
+          0,
+          Math.min(filteredCards.length - 1, current + direction)
+        )
       );
 
       setFlipped(false);
@@ -207,8 +266,6 @@ export default function FlashcardStudyPage() {
         finishSlide();
         return;
       }
-
-      const goingNext = direction === 1;
 
       sceneAnimation = scene.animate(
         [
@@ -265,7 +322,8 @@ export default function FlashcardStudyPage() {
           },
           {
             opacity: 1,
-            transform: "translate3d(0, 0, 0) rotateY(0deg) rotateZ(0deg) scale(1)",
+            transform:
+              "translate3d(0, 0, 0) rotateY(0deg) rotateZ(0deg) scale(1)",
             filter: "brightness(1)",
           },
         ],
@@ -286,10 +344,10 @@ export default function FlashcardStudyPage() {
       sceneAnimation?.cancel();
       previewAnimation?.cancel();
     };
-  }, [slideDirection, cards.length]);
+  }, [slideDirection, filteredCards.length]);
 
   async function saveProgress(status: "learning" | "known") {
-    const card = cards[index];
+    const card = filteredCards[index];
 
     if (!card || saving || isSliding) return;
 
@@ -368,7 +426,7 @@ export default function FlashcardStudyPage() {
 
     const nextIndex = index + direction;
 
-    if (nextIndex < 0 || nextIndex >= cards.length) return;
+    if (nextIndex < 0 || nextIndex >= filteredCards.length) return;
 
     slideLockRef.current = true;
     setNotice(null);
@@ -394,18 +452,18 @@ export default function FlashcardStudyPage() {
     );
   }
 
-  const currentCard = cards[index];
+  const currentCard = filteredCards[index];
 
   const previewCard =
     isSliding && slideDirection !== null
-      ? cards[index + slideDirection]
+      ? filteredCards[index + slideDirection]
       : null;
 
-  const knownCount = cards.filter(
+  const knownCount = filteredCards.filter(
     (card) => progress[card.id]?.status === "known"
   ).length;
 
-  const learningCount = cards.filter(
+  const learningCount = filteredCards.filter(
     (card) => progress[card.id]?.status === "learning"
   ).length;
 
@@ -640,11 +698,69 @@ export default function FlashcardStudyPage() {
         </p>
 
         {cards.length > 0 && (
+          <div className="relative mt-5 space-y-4">
+            <div>
+              <label
+                htmlFor="flashcard-unit"
+                className="mb-2 block text-sm font-bold text-cyan-100"
+              >
+                📖 اختار الوحدة اللي حاب تراجعها
+              </label>
+
+              <select
+                id="flashcard-unit"
+                value={selectedUnit}
+                onChange={(event) => setSelectedUnit(event.target.value)}
+                className="w-full rounded-xl border border-cyan-300/20 bg-[#061d30] px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10"
+              >
+                <option value="all">كل الوحدات</option>
+                {units.map((unitName) => (
+                  <option key={unitName} value={unitName}>
+                    {unitName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {cardType === "personality" && (
+              <div>
+                <label
+                  htmlFor="flashcard-personality-group"
+                  className="mb-2 block text-sm font-bold text-cyan-100"
+                >
+                  🌍 اختار المعسكر
+                </label>
+
+                <select
+                  id="flashcard-personality-group"
+                  value={selectedPersonalityGroup}
+                  onChange={(event) =>
+                    setSelectedPersonalityGroup(event.target.value)
+                  }
+                  className="w-full rounded-xl border border-cyan-300/20 bg-[#061d30] px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10"
+                >
+                  <option value="all">كل الشخصيات</option>
+                  <option value="western">المعسكر الغربي</option>
+                  <option value="eastern">المعسكر الشرقي</option>
+                  <option value="third_world">العالم الثالث</option>
+                </select>
+              </div>
+            )}
+
+            <p className="text-xs leading-6 text-slate-400">
+              {selectedUnit === "all" && selectedPersonalityGroup === "all"
+                ? "تظهر هنا جميع البطاقات المنشورة في هذا القسم."
+                : `عدد البطاقات المطابقة لاختياراتك: ${filteredCards.length}.`}
+            </p>
+          </div>
+        )}
+
+        {cards.length > 0 && (
           <div className="relative mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-2xl border border-cyan-400/15 bg-black/15 p-3 text-center">
               <div className="text-xs text-slate-400">عدد البطاقات</div>
               <div className="mt-1 text-xl font-black text-cyan-300">
-                {cards.length}
+                {filteredCards.length}
               </div>
             </div>
 
@@ -674,29 +790,54 @@ export default function FlashcardStudyPage() {
         </div>
       )}
 
-      {cards.length === 0 ? (
+      {filteredCards.length === 0 ? (
         <section className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
-          <div className="text-5xl">🗂️</div>
-          <h2 className="mt-5 text-xl font-black">البطاقات قيد التجهيز</h2>
+          <div className="text-5xl">
+            {cards.length === 0 ? "🗂️" : "📚"}
+          </div>
+
+          <h2 className="mt-5 text-xl font-black">
+            {cards.length === 0
+              ? "البطاقات قيد التجهيز"
+              : "ما كاين حتى بطاقة تطابق اختياراتك"}
+          </h2>
+
           <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-slate-400">
-            ما زال ما تنشرت حتى بطاقة في هذا القسم. كي يضيفها المسؤول من لوحة
-            الإدارة، راح تظهر هنا تلقائيًا.
+            {cards.length === 0
+              ? "ما زال ما تنشرت حتى بطاقة في هذا القسم. كي يضيفها المسؤول من لوحة الإدارة، راح تظهر هنا تلقائيًا."
+              : "جرّب تختار وحدة أخرى أو تعرض كل الوحدات والشخصيات."}
           </p>
-          <Link
-            href={`/flashcards/${subject}`}
-            className="mt-5 inline-flex rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-slate-300 transition hover:bg-white/5"
-          >
-            العودة إلى الأقسام
-          </Link>
+
+          {cards.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedUnit("all");
+                setSelectedPersonalityGroup("all");
+              }}
+              className="mt-5 inline-flex rounded-xl bg-cyan-400/10 px-4 py-3 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/15"
+            >
+              عرض كل البطاقات
+            </button>
+          )}
+
+          <div>
+            <Link
+              href={`/flashcards/${subject}`}
+              className="mt-5 inline-flex rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-slate-300 transition hover:bg-white/5"
+            >
+              العودة إلى الأقسام
+            </Link>
+          </div>
         </section>
       ) : (
         <>
           <div className="mx-auto mb-3 flex w-full max-w-[520px] items-center justify-between gap-3 text-sm">
             <span className="font-bold text-slate-300">
-              البطاقة {index + 1} من {cards.length}
+              البطاقة {index + 1} من {filteredCards.length}
             </span>
             <span className="text-xs text-cyan-200">
-              {Math.round(((index + 1) / cards.length) * 100)}٪
+              {Math.round(((index + 1) / filteredCards.length) * 100)}٪
             </span>
           </div>
 
@@ -704,7 +845,7 @@ export default function FlashcardStudyPage() {
             <div
               className="h-full rounded-full bg-gradient-to-l from-cyan-300 via-cyan-400 to-blue-500 shadow-[0_0_12px_rgba(34,211,238,0.45)] transition-all duration-500"
               style={{
-                width: `${((index + 1) / cards.length) * 100}%`,
+                width: `${((index + 1) / filteredCards.length) * 100}%`,
               }}
             />
           </div>
@@ -718,7 +859,10 @@ export default function FlashcardStudyPage() {
                 aria-hidden="true"
               >
                 <span className="rounded-full border border-cyan-200/25 bg-cyan-300/10 px-4 py-2 text-xs font-black text-cyan-100">
-                  ◉ {slideDirection === 1 ? "البطاقة الموالية" : "البطاقة السابقة"}
+                  ◉{" "}
+                  {slideDirection === 1
+                    ? "البطاقة الموالية"
+                    : "البطاقة السابقة"}
                 </span>
 
                 <div className="my-5 h-px w-20 bg-gradient-to-r from-transparent via-cyan-300 to-transparent" />
@@ -834,7 +978,9 @@ export default function FlashcardStudyPage() {
             aria-pressed={flipped}
             className="mx-auto mt-5 flex min-h-14 w-full max-w-[520px] items-center justify-center gap-3 rounded-2xl border border-cyan-300/50 bg-gradient-to-r from-[#073047] via-[#07506a] to-[#073047] px-5 py-3 font-black text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.13)] transition duration-300 hover:border-cyan-200 hover:shadow-[0_0_28px_rgba(34,211,238,0.27)] focus:outline-none focus:ring-2 focus:ring-cyan-300/50 active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
           >
-            <span className="text-xl transition-transform duration-500">🔄</span>
+            <span className="text-xl transition-transform duration-500">
+              🔄
+            </span>
             <span>{flipped ? "الرجوع إلى السؤال" : "اقلب البطاقة"}</span>
             <span className="text-cyan-300">✦</span>
           </button>
@@ -879,20 +1025,20 @@ export default function FlashcardStudyPage() {
             </button>
 
             <span className="rounded-full border border-cyan-300/15 bg-cyan-300/5 px-4 py-2 text-xs font-black text-cyan-100/70">
-              {index + 1} / {cards.length}
+              {index + 1} / {filteredCards.length}
             </span>
 
             <button
               type="button"
               onClick={() => moveCard(1)}
-              disabled={index === cards.length - 1 || isSliding}
+              disabled={index === filteredCards.length - 1 || isSliding}
               className="min-h-12 rounded-xl border border-cyan-200/15 px-4 py-3 text-sm font-bold text-slate-300 transition hover:border-cyan-200/30 hover:bg-cyan-300/5 disabled:cursor-not-allowed disabled:opacity-30"
             >
               التالية ←
             </button>
           </div>
 
-          {index === cards.length - 1 && (
+          {index === filteredCards.length - 1 && (
             <div className="mx-auto mt-5 max-w-[520px] rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.03] p-4 text-center">
               <p className="text-sm leading-7 text-slate-300">
                 وصلت لآخر بطاقة في هذا القسم. تقدر ترجع للبطاقات السابقة
@@ -905,5 +1051,3 @@ export default function FlashcardStudyPage() {
     </div>
   );
 }
-
-

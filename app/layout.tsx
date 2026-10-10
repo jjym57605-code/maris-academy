@@ -1,3 +1,4 @@
+
 import type { Metadata, Viewport } from "next";
 import { Tajawal, Space_Grotesk } from "next/font/google";
 import "./globals.css";
@@ -18,28 +19,32 @@ const grotesk = Space_Grotesk({
 
 const siteUrl = "https://maris-academy-three.vercel.app";
 
+const pageTitle = "MARIS ACADEMY 2027 | منصة بكالوريا الجزائر";
+
+const pageDescription =
+  "MARIS ACADEMY 2027 منصة تعليمية جزائرية لطلبة بكالوريا 2027، توفر الدروس والكورسات والاختبارات وأدوات تفاعلية تساعدك على تنظيم الدراسة ومتابعة تقدمك.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
 
   title: {
-    default: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027",
-    template: "%s | MARIS ACADEMY ²⁰²⁷",
+    default: pageTitle,
+    template: "%s | MARIS ACADEMY 2027",
   },
 
-  description:
-    "MARIS ACADEMY ²⁰²⁷ منصة تعليمية لبكالوريا 2027، توفر دروسًا وكورسات وفيديوهات واختبارات لمساعدة الطلبة على تنظيم الدراسة وتحسين مستواهم.",
+  description: pageDescription,
 
   keywords: [
     "MARIS ACADEMY",
-    "Maris Academy 2027",
+    "MARIS ACADEMY 2027",
+    "منصة بكالوريا الجزائر",
+    "بكالوريا الجزائر 2027",
     "بكالوريا 2027",
     "BAC 2027",
-    "بكالوريا الجزائر 2027",
     "دروس بكالوريا 2027",
     "كورسات بكالوريا 2027",
     "اختبارات بكالوريا 2027",
-    "منصة تعليمية",
-    "التعليم في الجزائر",
+    "منصة تعليمية جزائرية",
   ],
 
   authors: [
@@ -63,9 +68,8 @@ export const metadata: Metadata = {
     locale: "ar_DZ",
     url: siteUrl,
     siteName: "MARIS ACADEMY ²⁰²⁷",
-    title: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027",
-    description:
-      "منصة تعليمية لبكالوريا 2027 في الجزائر، مع الدروس والكورسات والفيديوهات والاختبارات ومتابعة تقدم الطالب.",
+    title: pageTitle,
+    description: pageDescription,
     images: [
       {
         url: "/images/og-image.png",
@@ -78,9 +82,8 @@ export const metadata: Metadata = {
 
   twitter: {
     card: "summary_large_image",
-    title: "MARIS ACADEMY ²⁰²⁷ — منصة بكالوريا 2027",
-    description:
-      "منصة تعليمية لبكالوريا 2027 تساعد الطلبة على التعلم وتنظيم الدراسة ومتابعة التقدم.",
+    title: pageTitle,
+    description: pageDescription,
     images: [
       {
         url: "/images/og-image.png",
@@ -129,6 +132,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-
-

@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
 
   title: {
-    default: "MARIS ACADEMY 2027 | منصة بكالوريا الجزائر",
+    default: pageTitle,
     template: "%s | MARIS ACADEMY 2027",
   },
 

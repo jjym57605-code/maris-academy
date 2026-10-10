@@ -5,12 +5,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
+import { useStreamPreview } from "@/contexts/stream-preview";
 
 type Subject = "history" | "geography";
 type CardType = "term" | "personality" | "date";
-type PersonalityGroup = "western" | "eastern" | "third_world";
+type PersonalityGroup =
+  | "historical"
+  | "national"
+  | "french"
+  | "western"
+  | "eastern"
+  | "third_world";
 type ProgressStatus = "new" | "learning" | "known";
 type SlideDirection = -1 | 1;
+type StreamGroup = "science" | "economics_literature" | "languages";
 
 type Flashcard = {
   id: string;
@@ -24,6 +32,7 @@ type Flashcard = {
   unit_name: string | null;
   personality_group: string | null;
   unit_number: number | null;
+  stream: string | null;
 };
 
 type CardProgress = {
@@ -44,15 +53,92 @@ const TYPE_INFO: Record<CardType, { title: string; icon: string }> = {
 };
 
 const PERSONALITY_GROUPS: Record<PersonalityGroup, string> = {
-  western: "المعسكر الغربي",
-  eastern: "المعسكر الشرقي",
-  third_world: "العالم الثالث",
+  historical: "شخصيات تاريخية",
+  national: "شخصيات وطنية جزائرية",
+  french: "شخصيات فرنسية",
+  western: "شخصيات المعسكر الغربي",
+  eastern: "شخصيات المعسكر الشرقي",
+  third_world: "شخصيات العالم الثالث",
+};
+
+const SCIENCE_STREAMS = [
+  "علوم تجريبية",
+  "رياضيات",
+  "تقني رياضي",
+];
+
+const ECONOMICS_LITERATURE_STREAMS = [
+  "تسيير واقتصاد",
+  "آداب وفلسفة",
+];
+
+const UNIT_OPTIONS_BY_GROUP: Record<
+  StreamGroup,
+  Record<Subject, string[]>
+> = {
+  science: {
+    history: [
+      "تطور العالم في ظل القطبية الثنائية ما بين 1945 و1989",
+      "الجزائر ما بين 1945 و1989",
+      "تطور العالم الثالث ما بين 1945 و1989",
+    ],
+    geography: [
+      "واقع الاقتصاد العالمي",
+      "القوى الاقتصادية الكبرى في العالم",
+      "الاقتصاد والتنمية في دول الجنوب",
+    ],
+  },
+
+  economics_literature: {
+    history: [
+      "تطور العالم في ظل الثنائية القطبية (1945 - 1989)",
+      "الجزائر ما بين 1945 - 1989",
+      "العالم الثالث بين تراجع الاستعمار التقليدي واستمرارية حركات التحرر",
+    ],
+    geography: [
+      "واقع الاقتصاد العالمي",
+      "القوى الاقتصادية الكبرى في العالم",
+      "الاقتصاد الجزائري والفوارق الإقليمية",
+    ],
+  },
+
+  languages: {
+    history: [
+      "تطور العالم في ظل الثنائية القطبية (1945 - 1989)",
+      "الجزائر بين 1945 و1989",
+      "العالم الثالث بين تراجع الاستعمار التقليدي واستمرار حركات التحرر",
+    ],
+    geography: [
+      "واقع الاقتصاد العالمي",
+      "القوى الاقتصادية الكبرى في العالم",
+      "الاقتصاد الجزائري وعلاقته بالعالم الخارجي",
+    ],
+  },
 };
 
 const SLIDE_DURATION = 720;
 
+function getStreamGroup(stream: string | null): StreamGroup | null {
+  if (!stream) return null;
+
+  if (SCIENCE_STREAMS.includes(stream)) {
+    return "science";
+  }
+
+  if (ECONOMICS_LITERATURE_STREAMS.includes(stream)) {
+    return "economics_literature";
+  }
+
+  if (stream === "لغات أجنبية") {
+    return "languages";
+  }
+
+  return null;
+}
+
 export default function FlashcardStudyPage() {
   const params = useParams<{ subject: string; type: string }>();
+  const { previewStream } = useStreamPreview();
 
   const subjectParam = params.subject;
   const typeParam = params.type;
@@ -92,8 +178,8 @@ export default function FlashcardStudyPage() {
   const slideLockRef = useRef(false);
 
   const isSliding = slideDirection !== null;
+  const isPreviewMode = Boolean(previewStream);
 
-  // إرجاع اسم الوحدة، مع دعم البطاقات القديمة التي تستعمل رقم الوحدة.
   function getCardUnitName(card: Flashcard): string {
     return (
       card.unit_name?.trim() ||
@@ -101,7 +187,6 @@ export default function FlashcardStudyPage() {
     );
   }
 
-  // استخراج أسماء الوحدات الموجودة فعليًا في البطاقات المنشورة.
   const units = Array.from(
     new Set(
       cards
@@ -110,7 +195,6 @@ export default function FlashcardStudyPage() {
     )
   ).sort((a, b) => a.localeCompare(b, "ar"));
 
-  // تصفية البطاقات حسب الوحدة والمعسكر عند مراجعة الشخصيات.
   const filteredCards = cards.filter((card) => {
     const matchesUnit =
       selectedUnit === "all" || getCardUnitName(card) === selectedUnit;
@@ -152,20 +236,77 @@ export default function FlashcardStudyPage() {
         return;
       }
 
-      const { data: cardsData, error: cardsError } = await supabase
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("stream")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+
+      const profileStream =
+        typeof profile?.stream === "string" && profile.stream.trim()
+          ? profile.stream.trim()
+          : null;
+
+      // المعاينة تغيّر المحتوى المعروض فقط، ولا تغيّر شعبة الحساب الحقيقية.
+      const studentStream = previewStream ?? profileStream;
+
+      const streamGroup = getStreamGroup(studentStream);
+
+      let cardsQuery = supabase
         .from("flashcards")
         .select(
-          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, unit_name, personality_group, unit_number"
+          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, unit_name, personality_group, unit_number, stream"
         )
         .eq("subject", subject)
         .eq("card_type", cardType)
-        .eq("is_active", true)
+        .eq("is_active", true);
+
+      if (studentStream) {
+        cardsQuery = cardsQuery.or(
+          `stream.is.null,stream.eq.${studentStream}`
+        );
+      } else {
+        cardsQuery = cardsQuery.is("stream", null);
+      }
+
+      const { data: cardsData, error: cardsError } = await cardsQuery
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
 
       if (cardsError) throw cardsError;
 
-      const loadedCards = (cardsData ?? []) as Flashcard[];
+      const allLoadedCards = (cardsData ?? []) as Flashcard[];
+
+      /*
+       * تصفية البطاقات:
+       * 1. البطاقات المخصصة لشعبة تظهر لتلك الشعبة فقط.
+       * 2. البطاقات العامة ذات الوحدة تظهر إذا كانت الوحدة ضمن برنامج الشعبة.
+       * 3. البطاقات القديمة التي لا تحمل اسم وحدة تبقى متاحة.
+       */
+
+      const allowedUnits = streamGroup
+        ? UNIT_OPTIONS_BY_GROUP[streamGroup][subject]
+        : [];
+
+      const loadedCards = allLoadedCards.filter((card) => {
+        if (card.stream !== null) {
+          return card.stream.trim() === studentStream;
+        }
+
+        const unitName = getCardUnitName(card);
+
+        if (!unitName) {
+          return true;
+        }
+
+        if (!streamGroup) {
+          return false;
+        }
+
+        return allowedUnits.includes(unitName);
+      });
 
       setCards(loadedCards);
       setSelectedUnit("all");
@@ -175,9 +316,17 @@ export default function FlashcardStudyPage() {
       setSlideDirection(null);
       slideLockRef.current = false;
       setNotice(null);
+      setProgress({});
 
       if (loadedCards.length === 0) {
-        setProgress({});
+        return;
+      }
+
+      /*
+       * في وضع المعاينة لا نقرأ تقدّم الحساب الحقيقي،
+       * حتى لا نعرض إحصائيات مضللة من بطاقات شعبة أخرى.
+       */
+      if (previewStream) {
         return;
       }
 
@@ -209,13 +358,19 @@ export default function FlashcardStudyPage() {
     } finally {
       setLoading(false);
     }
-  }, [subjectParam, typeParam, validCombination, subject, cardType]);
+  }, [
+    subjectParam,
+    typeParam,
+    validCombination,
+    subject,
+    cardType,
+    previewStream,
+  ]);
 
   useEffect(() => {
     void loadCards();
   }, [loadCards]);
 
-  // إعادة العرض من البطاقة الأولى عند تغيير الوحدة أو المعسكر.
   useEffect(() => {
     setIndex(0);
     setFlipped(false);
@@ -225,7 +380,6 @@ export default function FlashcardStudyPage() {
     setError(null);
   }, [selectedUnit, selectedPersonalityGroup]);
 
-  // حركة الانتقال ثلاثية الأبعاد بين البطاقات.
   useEffect(() => {
     if (slideDirection === null) return;
 
@@ -350,6 +504,14 @@ export default function FlashcardStudyPage() {
     const card = filteredCards[index];
 
     if (!card || saving || isSliding) return;
+
+    // حماية إضافية: ممنوع حفظ التقدّم أثناء معاينة شعبة أخرى.
+    if (previewStream) {
+      setNotice(
+        "أنت في وضع معاينة الشعبة؛ حفظ التقدّم معطّل حتى لا تتغيّر بياناتك الحقيقية."
+      );
+      return;
+    }
 
     try {
       setSaving(true);
@@ -525,16 +687,8 @@ export default function FlashcardStudyPage() {
         .maris-front {
           transform: rotateY(0deg) translateZ(1px);
           background:
-            radial-gradient(
-              circle at 12% 12%,
-              rgba(34, 211, 238, 0.22),
-              transparent 35%
-            ),
-            radial-gradient(
-              circle at 90% 88%,
-              rgba(14, 165, 233, 0.22),
-              transparent 38%
-            ),
+            radial-gradient(circle at 12% 12%, rgba(34, 211, 238, 0.22), transparent 35%),
+            radial-gradient(circle at 90% 88%, rgba(14, 165, 233, 0.22), transparent 38%),
             linear-gradient(145deg, #0c344d 0%, #062339 48%, #041426 100%);
           border: 1px solid rgba(103, 232, 249, 0.75);
           box-shadow:
@@ -546,16 +700,8 @@ export default function FlashcardStudyPage() {
         .maris-back {
           transform: rotateY(180deg) translateZ(1px);
           background:
-            radial-gradient(
-              circle at 85% 15%,
-              rgba(45, 212, 191, 0.23),
-              transparent 36%
-            ),
-            radial-gradient(
-              circle at 10% 90%,
-              rgba(59, 130, 246, 0.24),
-              transparent 40%
-            ),
+            radial-gradient(circle at 85% 15%, rgba(45, 212, 191, 0.23), transparent 36%),
+            radial-gradient(circle at 10% 90%, rgba(59, 130, 246, 0.24), transparent 40%),
             linear-gradient(145deg, #073d4a 0%, #082a40 52%, #041729 100%);
           border: 1px solid rgba(94, 234, 212, 0.85);
           box-shadow:
@@ -633,11 +779,7 @@ export default function FlashcardStudyPage() {
           border-radius: 28px;
           text-align: center;
           background:
-            radial-gradient(
-              circle at 15% 10%,
-              rgba(34, 211, 238, 0.25),
-              transparent 40%
-            ),
+            radial-gradient(circle at 15% 10%, rgba(34, 211, 238, 0.25), transparent 40%),
             linear-gradient(145deg, #0b3048, #041426 85%);
           box-shadow:
             0 30px 65px rgba(0, 0, 0, 0.5),
@@ -653,12 +795,10 @@ export default function FlashcardStudyPage() {
         }
 
         @keyframes maris-shimmer {
-          0%,
-          30% {
+          0%, 30% {
             transform: translateX(-65%) rotate(12deg);
           }
-          65%,
-          100% {
+          65%, 100% {
             transform: translateX(65%) rotate(12deg);
           }
         }
@@ -697,6 +837,20 @@ export default function FlashcardStudyPage() {
           بحركة ثلاثية الأبعاد.
         </p>
 
+        {isPreviewMode && (
+          <div className="relative mt-4 rounded-2xl border border-amber-300/25 bg-amber-300/[0.07] p-4">
+            <p className="font-black text-amber-200">
+              👁️ وضع معاينة الشعبة
+            </p>
+            <p className="mt-1 text-sm text-slate-300">
+              راك تشوف بطاقات شعبة: {previewStream}
+            </p>
+            <p className="mt-2 text-xs leading-6 text-slate-400">
+              التقدّم والحفظ الحقيقي معطّلين أثناء المعاينة.
+            </p>
+          </div>
+        )}
+
         {cards.length > 0 && (
           <div className="relative mt-5 space-y-4">
             <div>
@@ -728,7 +882,7 @@ export default function FlashcardStudyPage() {
                   htmlFor="flashcard-personality-group"
                   className="mb-2 block text-sm font-bold text-cyan-100"
                 >
-                  🌍 اختار المعسكر
+                  🌍 اختار تصنيف الشخصية
                 </label>
 
                 <select
@@ -740,16 +894,18 @@ export default function FlashcardStudyPage() {
                   className="w-full rounded-xl border border-cyan-300/20 bg-[#061d30] px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/10"
                 >
                   <option value="all">كل الشخصيات</option>
-                  <option value="western">المعسكر الغربي</option>
-                  <option value="eastern">المعسكر الشرقي</option>
-                  <option value="third_world">العالم الثالث</option>
+                  {Object.entries(PERSONALITY_GROUPS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
 
             <p className="text-xs leading-6 text-slate-400">
               {selectedUnit === "all" && selectedPersonalityGroup === "all"
-                ? "تظهر هنا جميع البطاقات المنشورة في هذا القسم."
+                ? "تظهر هنا جميع البطاقات المنشورة والمتاحة لشعبتك."
                 : `عدد البطاقات المطابقة لاختياراتك: ${filteredCards.length}.`}
             </p>
           </div>
@@ -765,16 +921,20 @@ export default function FlashcardStudyPage() {
             </div>
 
             <div className="rounded-2xl border border-emerald-400/15 bg-black/15 p-3 text-center">
-              <div className="text-xs text-slate-400">حفظتها</div>
+              <div className="text-xs text-slate-400">
+                {isPreviewMode ? "التقدّم" : "حفظتها"}
+              </div>
               <div className="mt-1 text-xl font-black text-emerald-300">
-                {knownCount}
+                {isPreviewMode ? "—" : knownCount}
               </div>
             </div>
 
             <div className="rounded-2xl border border-amber-400/15 bg-black/15 p-3 text-center">
-              <div className="text-xs text-slate-400">للمراجعة</div>
+              <div className="text-xs text-slate-400">
+                {isPreviewMode ? "الحفظ" : "للمراجعة"}
+              </div>
               <div className="mt-1 text-xl font-black text-amber-300">
-                {learningCount}
+                {isPreviewMode ? "معطّل" : learningCount}
               </div>
             </div>
           </div>
@@ -804,7 +964,7 @@ export default function FlashcardStudyPage() {
 
           <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-slate-400">
             {cards.length === 0
-              ? "ما زال ما تنشرت حتى بطاقة في هذا القسم. كي يضيفها المسؤول من لوحة الإدارة، راح تظهر هنا تلقائيًا."
+              ? "ما زال ما تنشرت حتى بطاقة في هذا القسم للشعبة المعروضة. كي يضيفها المسؤول من لوحة الإدارة، راح تظهر هنا تلقائيًا."
               : "جرّب تختار وحدة أخرى أو تعرض كل الوحدات والشخصيات."}
           </p>
 
@@ -989,19 +1149,37 @@ export default function FlashcardStudyPage() {
             <button
               type="button"
               onClick={() => void saveProgress("learning")}
-              disabled={saving || isSliding}
+              disabled={saving || isSliding || isPreviewMode}
+              title={
+                isPreviewMode
+                  ? "الحفظ معطّل أثناء معاينة الشعبة"
+                  : undefined
+              }
               className="min-h-14 rounded-2xl border border-amber-300/30 bg-gradient-to-br from-amber-400/10 to-orange-400/5 px-3 py-3 font-black text-amber-200 transition hover:border-amber-300/60 hover:shadow-[0_0_20px_rgba(251,191,36,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saving ? "جارٍ الحفظ..." : "📖 نراجعها"}
+              {isPreviewMode
+                ? "🔒 الحفظ معطّل"
+                : saving
+                  ? "جارٍ الحفظ..."
+                  : "📖 نراجعها"}
             </button>
 
             <button
               type="button"
               onClick={() => void saveProgress("known")}
-              disabled={saving || isSliding}
+              disabled={saving || isSliding || isPreviewMode}
+              title={
+                isPreviewMode
+                  ? "الحفظ معطّل أثناء معاينة الشعبة"
+                  : undefined
+              }
               className="min-h-14 rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-400/10 to-teal-400/5 px-3 py-3 font-black text-emerald-200 transition hover:border-emerald-300/60 hover:shadow-[0_0_20px_rgba(52,211,153,0.12)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saving ? "جارٍ الحفظ..." : "✓ حفظتها"}
+              {isPreviewMode
+                ? "🔒 الحفظ معطّل"
+                : saving
+                  ? "جارٍ الحفظ..."
+                  : "✓ حفظتها"}
             </button>
           </div>
 

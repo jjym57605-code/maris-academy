@@ -1,10 +1,10 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { getSupabase } from "@/lib/supabase";
+import { useStreamPreview } from "@/contexts/stream-preview";
 
 import {
   getSession,
@@ -64,6 +64,8 @@ const QUICK_LINKS = [
 ];
 
 export default function DashboardPage() {
+  const { previewStream } = useStreamPreview();
+
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -95,6 +97,9 @@ export default function DashboardPage() {
         const userId = session.user.id;
         const profileData = await getProfile(supabase, userId);
 
+        const effectiveStream =
+          previewStream ?? profileData?.stream ?? null;
+
         const [
           announcementsData,
           nextLessonData,
@@ -105,15 +110,27 @@ export default function DashboardPage() {
           listCoursesWithProgress(
             supabase,
             userId,
-            profileData?.stream ?? null
+            effectiveStream
           ),
         ]);
 
         if (!mounted) return;
 
+        // نعرض الدرس التالي فقط إذا كانت دورته ضمن الدورات
+        // الظاهرة للشعبة المختارة في المعاينة.
+        const visibleNextLesson = previewStream
+          ? nextLessonData &&
+            coursesData.some(
+              (course) =>
+                course.id === nextLessonData.course?.id
+            )
+            ? nextLessonData
+            : null
+          : nextLessonData;
+
         setProfile(profileData);
         setAnnouncements(announcementsData ?? []);
-        setNextLesson(nextLessonData);
+        setNextLesson(visibleNextLesson);
         setCourses(coursesData ?? []);
       } catch (err) {
         console.error("Dashboard loading error:", err);
@@ -132,12 +149,12 @@ export default function DashboardPage() {
       }
     }
 
-    loadDashboard();
+    void loadDashboard();
 
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [previewStream]);
 
   if (loading) {
     return (
@@ -207,6 +224,12 @@ export default function DashboardPage() {
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
                 مرحبًا بك في لوحة التحكم الخاصة بك. تابع دروسك وتقدمك وآخر أخبار الأكاديمية استعدادًا لـ BAC 2027.
               </p>
+
+              {previewStream && (
+                <p className="mt-3 inline-flex rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1.5 text-xs font-bold text-cyan-100">
+                  👁️ معاينة شعبة {previewStream}
+                </p>
+              )}
             </div>
 
             <div className="relative flex flex-wrap gap-3">
@@ -593,10 +616,3 @@ export default function DashboardPage() {
     </main>
   );
 }
-
-
-
-
-
-
-

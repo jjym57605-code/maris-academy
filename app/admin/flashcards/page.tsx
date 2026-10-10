@@ -5,10 +5,19 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
+import { BAC_STREAMS } from "@/types/database";
 
 type Subject = "history" | "geography";
 type CardType = "term" | "personality" | "date";
-type PersonalityGroup = "western" | "eastern" | "third_world";
+type PersonalityGroup =
+  | "historical"
+  | "national"
+  | "french"
+  | "western"
+  | "eastern"
+  | "third_world";
+
+type StreamGroup = "science" | "economics_literature" | "languages";
 
 type Flashcard = {
   id: string;
@@ -22,6 +31,7 @@ type Flashcard = {
   unit_name: string | null;
   personality_group: string | null;
   unit_number: number | null;
+  stream: string | null;
   is_active: boolean;
   created_at: string;
 };
@@ -36,6 +46,7 @@ type CardForm = {
   sort_order: string;
   unit_name: string;
   personality_group: PersonalityGroup | "";
+  stream: string;
   is_active: boolean;
 };
 
@@ -49,8 +60,96 @@ const emptyForm: CardForm = {
   sort_order: "0",
   unit_name: "",
   personality_group: "",
+  stream: "all",
   is_active: true,
 };
+
+const SCIENCE_STREAMS = [
+  "علوم تجريبية",
+  "رياضيات",
+  "تقني رياضي",
+];
+
+const ECONOMICS_LITERATURE_STREAMS = [
+  "تسيير واقتصاد",
+  "آداب وفلسفة",
+];
+
+const UNIT_OPTIONS_BY_GROUP: Record<
+  StreamGroup,
+  Record<Subject, string[]>
+> = {
+  science: {
+    history: [
+      "تطور العالم في ظل القطبية الثنائية ما بين 1945 و1989",
+      "الجزائر ما بين 1945 و1989",
+      "تطور العالم الثالث ما بين 1945 و1989",
+    ],
+    geography: [
+      "واقع الاقتصاد العالمي",
+      "القوى الاقتصادية الكبرى في العالم",
+      "الاقتصاد والتنمية في دول الجنوب",
+    ],
+  },
+
+  economics_literature: {
+    history: [
+      "تطور العالم في ظل الثنائية القطبية (1945 - 1989)",
+      "الجزائر ما بين 1945 - 1989",
+      "العالم الثالث بين تراجع الاستعمار التقليدي واستمرارية حركات التحرر",
+    ],
+    geography: [
+      "واقع الاقتصاد العالمي",
+      "القوى الاقتصادية الكبرى في العالم",
+      "الاقتصاد الجزائري والفوارق الإقليمية",
+    ],
+  },
+
+  languages: {
+    history: [
+      "تطور العالم في ظل الثنائية القطبية (1945 - 1989)",
+      "الجزائر بين 1945 و1989",
+      "العالم الثالث بين تراجع الاستعمار التقليدي واستمرار حركات التحرر",
+    ],
+    geography: [
+      "واقع الاقتصاد العالمي",
+      "القوى الاقتصادية الكبرى في العالم",
+      "الاقتصاد الجزائري وعلاقته بالعالم الخارجي",
+    ],
+  },
+};
+
+function getStreamGroup(stream: string): StreamGroup | null {
+  if (SCIENCE_STREAMS.includes(stream)) {
+    return "science";
+  }
+
+  if (ECONOMICS_LITERATURE_STREAMS.includes(stream)) {
+    return "economics_literature";
+  }
+
+  if (stream === "لغات أجنبية") {
+    return "languages";
+  }
+
+  return null;
+}
+
+function getUnitOptions(subject: Subject, stream: string): string[] {
+  if (stream === "all") {
+    return Array.from(
+      new Set(
+        Object.values(UNIT_OPTIONS_BY_GROUP).flatMap(
+          (group) => group[subject]
+        )
+      )
+    );
+  }
+
+  const group = getStreamGroup(stream) ?? "science";
+
+  return UNIT_OPTIONS_BY_GROUP[group][subject];
+}
 
 const typeLabels: Record<CardType, string> = {
   term: "مصطلح",
@@ -59,10 +158,15 @@ const typeLabels: Record<CardType, string> = {
 };
 
 const groupLabels: Record<PersonalityGroup, string> = {
-  western: "المعسكر الغربي",
-  eastern: "المعسكر الشرقي",
-  third_world: "العالم الثالث",
+  historical: "شخصيات تاريخية",
+  national: "شخصيات وطنية جزائرية",
+  french: "شخصيات فرنسية",
+  western: "شخصيات المعسكر الغربي",
+  eastern: "شخصيات المعسكر الشرقي",
+  third_world: "شخصيات العالم الثالث",
 };
+
+const streamOptions = [...BAC_STREAMS];
 
 export default function AdminFlashcardsPage() {
   const router = useRouter();
@@ -77,6 +181,7 @@ export default function AdminFlashcardsPage() {
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterUnit, setFilterUnit] = useState("all");
+  const [filterStream, setFilterStream] = useState("all");
   const [search, setSearch] = useState("");
 
   const [message, setMessage] = useState("");
@@ -114,7 +219,7 @@ export default function AdminFlashcardsPage() {
       const { data, error } = await supabase
         .from("flashcards")
         .select(
-          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, unit_name, personality_group, unit_number, is_active, created_at"
+          "id, subject, card_type, title, front_content, back_content, image_url, sort_order, unit_name, personality_group, unit_number, stream, is_active, created_at"
         )
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false });
@@ -153,6 +258,17 @@ export default function AdminFlashcardsPage() {
         next.personality_group = "";
       }
 
+      if (key === "stream" || key === "subject") {
+        const newOptions = getUnitOptions(
+          next.subject,
+          next.stream
+        );
+
+        if (!newOptions.includes(next.unit_name)) {
+          next.unit_name = "";
+        }
+      }
+
       return next;
     });
   }
@@ -165,8 +281,14 @@ export default function AdminFlashcardsPage() {
   }
 
   function getCardUnitName(card: Flashcard) {
-    return card.unit_name?.trim() ||
-      (card.unit_number !== null ? `الوحدة ${card.unit_number}` : "");
+    return (
+      card.unit_name?.trim() ||
+      (card.unit_number !== null ? `الوحدة ${card.unit_number}` : "")
+    );
+  }
+
+  function getStreamLabel(stream: string | null) {
+    return stream || "عام — جميع الشعب";
   }
 
   function startEditing(card: Flashcard) {
@@ -174,6 +296,9 @@ export default function AdminFlashcardsPage() {
 
     const savedGroup = card.personality_group;
     const validGroup =
+      savedGroup === "historical" ||
+      savedGroup === "national" ||
+      savedGroup === "french" ||
       savedGroup === "western" ||
       savedGroup === "eastern" ||
       savedGroup === "third_world"
@@ -190,6 +315,7 @@ export default function AdminFlashcardsPage() {
       sort_order: String(card.sort_order),
       unit_name: getCardUnitName(card),
       personality_group: validGroup,
+      stream: card.stream ?? "all",
       is_active: card.is_active,
     });
 
@@ -220,7 +346,7 @@ export default function AdminFlashcardsPage() {
     }
 
     if (!form.unit_name.trim()) {
-      setErrorMessage("اكتب اسم الوحدة، مثلاً: الوحدة 1.");
+      setErrorMessage("اختار الوحدة من القائمة.");
       return;
     }
 
@@ -228,7 +354,7 @@ export default function AdminFlashcardsPage() {
       form.card_type === "personality" &&
       !form.personality_group
     ) {
-      setErrorMessage("اختار المعسكر الذي تنتمي إليه الشخصية.");
+      setErrorMessage("اختار تصنيف الشخصية.");
       return;
     }
 
@@ -258,7 +384,7 @@ export default function AdminFlashcardsPage() {
           form.card_type === "personality"
             ? form.personality_group || null
             : null,
-        // العمود القديم لم يعد مستعملاً في النظام الجديد.
+        stream: form.stream === "all" ? null : form.stream,
         unit_number: null,
         is_active: form.is_active,
         updated_at: new Date().toISOString(),
@@ -372,6 +498,13 @@ export default function AdminFlashcardsPage() {
     await loadCards();
   }
 
+  const unitOptions = getUnitOptions(form.subject, form.stream);
+
+  const availableUnitOptions =
+    form.unit_name && !unitOptions.includes(form.unit_name)
+      ? [form.unit_name, ...unitOptions]
+      : unitOptions;
+
   const unitNames = Array.from(
     new Set(
       cards
@@ -390,11 +523,22 @@ export default function AdminFlashcardsPage() {
     const matchesUnit =
       filterUnit === "all" || getCardUnitName(card) === filterUnit;
 
+    const matchesStream =
+      filterStream === "all" ||
+      (filterStream === "common" && card.stream === null) ||
+      card.stream === filterStream;
+
     const matchesSearch =
       !search.trim() ||
       card.title.toLowerCase().includes(search.trim().toLowerCase());
 
-    return matchesSubject && matchesType && matchesUnit && matchesSearch;
+    return (
+      matchesSubject &&
+      matchesType &&
+      matchesUnit &&
+      matchesStream &&
+      matchesSearch
+    );
   });
 
   if (loading) {
@@ -431,8 +575,8 @@ export default function AdminFlashcardsPage() {
             </h1>
 
             <p className="mt-3 text-sm leading-7 text-slate-400">
-              أنشئ بطاقات التاريخ والجغرافيا، واكتب اسم الوحدة وصنّف
-              الشخصيات حسب المعسكر، ثم تحكّم في محتواها ونشرها.
+              أنشئ بطاقات التاريخ والجغرافيا، وحدّد الشعبة والوحدة
+              وتصنيف الشخصية، ثم تحكّم في المحتوى ونشره.
             </p>
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -468,7 +612,7 @@ export default function AdminFlashcardsPage() {
                 {editingId ? "✏️ تعديل بطاقة" : "➕ إضافة بطاقة جديدة"}
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                حدّد المادة والنوع واكتب اسم الوحدة ومحتوى الوجهين.
+                حدّد المادة والشعبة والوحدة، ثم اكتب محتوى الوجهين.
               </p>
             </div>
 
@@ -517,21 +661,45 @@ export default function AdminFlashcardsPage() {
               </Field>
             </div>
 
-            <Field label="اسم الوحدة">
-              <input
-                value={form.unit_name}
-                onChange={(event) =>
-                  updateForm("unit_name", event.target.value)
-                }
-                placeholder="مثال: الوحدة 1 أو الحرب الباردة"
-                className={inputClass}
-                maxLength={120}
-                required
-              />
-            </Field>
+            <div className="grid gap-5 md:grid-cols-2">
+              <Field label="الشعبة المستهدفة">
+                <select
+                  value={form.stream}
+                  onChange={(event) =>
+                    updateForm("stream", event.target.value)
+                  }
+                  className={inputClass}
+                >
+                  <option value="all">عام — جميع الشعب</option>
+                  {streamOptions.map((stream) => (
+                    <option key={stream} value={stream}>
+                      {stream}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="الوحدة التعليمية">
+                <select
+                  value={form.unit_name}
+                  onChange={(event) =>
+                    updateForm("unit_name", event.target.value)
+                  }
+                  className={inputClass}
+                  required
+                >
+                  <option value="">اختار الوحدة</option>
+                  {availableUnitOptions.map((unitName) => (
+                    <option key={unitName} value={unitName}>
+                      {unitName}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
 
             {form.card_type === "personality" && (
-              <Field label="المعسكر الذي تنتمي إليه الشخصية">
+              <Field label="تصنيف الشخصية">
                 <select
                   value={form.personality_group}
                   onChange={(event) =>
@@ -543,10 +711,12 @@ export default function AdminFlashcardsPage() {
                   className={inputClass}
                   required
                 >
-                  <option value="">اختار المعسكر</option>
-                  <option value="western">المعسكر الغربي</option>
-                  <option value="eastern">المعسكر الشرقي</option>
-                  <option value="third_world">العالم الثالث</option>
+                  <option value="">اختار تصنيف الشخصية</option>
+                  {Object.entries(groupLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </Field>
             )}
@@ -655,17 +825,31 @@ export default function AdminFlashcardsPage() {
               📚 البطاقات الموجودة
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              ابحث حسب العنوان، أو صفِّ البطاقات بالمادة والنوع والوحدة.
+              صفِّ المحتوى حسب الشعبة والمادة والنوع والوحدة، دون تغيير حسابك.
             </p>
           </div>
 
-          <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="ابحث بعنوان البطاقة..."
               className={inputClass}
             />
+
+            <select
+              value={filterStream}
+              onChange={(event) => setFilterStream(event.target.value)}
+              className={inputClass}
+            >
+              <option value="all">كل الشعب والبطاقات العامة</option>
+              <option value="common">البطاقات العامة فقط</option>
+              {streamOptions.map((stream) => (
+                <option key={stream} value={stream}>
+                  {stream}
+                </option>
+              ))}
+            </select>
 
             <select
               value={filterSubject}
@@ -731,6 +915,8 @@ export default function AdminFlashcardsPage() {
                         <Tag>
                           {getCardUnitName(card) || "وحدة غير محددة"}
                         </Tag>
+
+                        <Tag>{getStreamLabel(card.stream)}</Tag>
 
                         {card.card_type === "personality" &&
                           card.personality_group &&

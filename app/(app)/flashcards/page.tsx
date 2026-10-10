@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import { useStreamPreview } from "@/contexts/stream-preview";
 
 const SUBJECTS = [
   {
@@ -31,6 +32,8 @@ const SUBJECTS = [
 ] as const;
 
 export default function FlashcardsPage() {
+  const { previewStream } = useStreamPreview();
+
   return (
     <div dir="rtl" className="w-full text-white">
       <section className="relative mb-6 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-7">
@@ -50,6 +53,25 @@ export default function FlashcardsPage() {
             راجع دروسك بذكاء! اختار المادة، اقلب البطاقة باش تشوف
             الإجابة، وانتقل من بطاقة للّي بعدها حتى تثبّت معلوماتك.
           </p>
+
+          {previewStream && (
+            <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-400/[0.07] p-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">👁️</span>
+                <div>
+                  <p className="text-sm font-black text-amber-300">
+                    وضع معاينة الشعبة
+                  </p>
+                  <p className="mt-1 text-sm text-foam/70">
+                    راك تشوف بطاقات شعبة: {previewStream}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-6 text-foam/50">
+                هذه معاينة فقط، ما تبدّلش شعبة الطالب الحقيقية.
+              </p>
+            </div>
+          )}
 
           <div className="mt-5 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
             <span className="text-xl">🔄</span>
@@ -84,11 +106,15 @@ export default function FlashcardsPage() {
 
             <div className="relative">
               <div className="flex items-start justify-between gap-3">
-                <div className={`flex h-16 w-16 items-center justify-center rounded-2xl border text-4xl ${subject.iconBg}`}>
+                <div
+                  className={`flex h-16 w-16 items-center justify-center rounded-2xl border text-4xl ${subject.iconBg}`}
+                >
                   {subject.icon}
                 </div>
 
-                <span className={`rounded-full border border-white/10 bg-black/10 px-3 py-1.5 text-[10px] font-black tracking-widest ${subject.accent}`}>
+                <span
+                  className={`rounded-full border border-white/10 bg-black/10 px-3 py-1.5 text-[10px] font-black tracking-widest ${subject.accent}`}
+                >
                   {subject.badge}
                 </span>
               </div>
@@ -117,7 +143,9 @@ export default function FlashcardsPage() {
                   ادخل وابدأ الحفظ
                 </span>
 
-                <span className={`text-xl transition-transform duration-300 group-hover:-translate-x-1 ${subject.accent}`}>
+                <span
+                  className={`text-xl transition-transform duration-300 group-hover:-translate-x-1 ${subject.accent}`}
+                >
                   ←
                 </span>
               </div>

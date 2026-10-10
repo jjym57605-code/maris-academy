@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -16,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui";
 import SetupNotice from "@/components/SetupNotice";
 import MarisTour from "@/components/MarisTour";
+import { StreamPreviewProvider } from "@/contexts/stream-preview";
 
 // ══════════════════════════════════════════════════════
 // MARIS ACADEMY — App Shell
@@ -26,7 +26,7 @@ const NAV_ITEMS = [
   { href: "/reels", icon: "🎬", label: "الريلزات" },
   { href: "/courses", icon: "📚", label: "الدورات" },
   { href: "/library", icon: "📖", label: "مكتبة الدروس" },
-    { href: "/flashcards", icon: "🧠", label: "حفظني" },
+  { href: "/flashcards", icon: "🧠", label: "حفظني" },
   { href: "/quizzes", icon: "📝", label: "الاختبارات" },
   { href: "/forum", icon: "💬", label: "المنتدى" },
   { href: "/progress", icon: "📊", label: "تقدمي" },
@@ -339,204 +339,206 @@ export default function AppShell({
   }
 
   return (
-    <div className="min-h-screen">
-      {/* TOP BAR */}
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-navy-950/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
+    <StreamPreviewProvider isAdmin={isAdmin}>
+      <div className="min-h-screen">
+        {/* TOP BAR */}
+        <header className="sticky top-0 z-30 border-b border-white/5 bg-navy-950/85 backdrop-blur-xl">
+          <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
+            <button
+              type="button"
+              data-tour="app-menu-button"
+              onClick={() => setMenuOpen((current) => !current)}
+              className={cn(
+                "flex h-11 w-11 items-center justify-center rounded-2xl",
+                "border border-white/10 bg-white/5",
+                "text-2xl text-foam",
+                "transition-all duration-200",
+                "hover:bg-white/10 hover:text-cyan-300",
+                "active:scale-95"
+              )}
+              aria-label={menuOpen ? "إغلاق القائمة" : "فتح القائمة"}
+              aria-expanded={menuOpen}
+            >
+              <span aria-hidden>{menuOpen ? "✕" : "☰"}</span>
+            </button>
+
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2"
+              aria-label="MARIS ACADEMY — الرئيسية"
+            >
+              <span className="text-2xl" aria-hidden>🌊</span>
+
+              <span className="font-grotesk text-xs font-bold leading-tight tracking-widest text-white sm:text-sm">
+                MARIS
+                <br />
+                ACADEMY{" "}
+                <span className="text-cyan-400">²⁰²⁷</span>
+              </span>
+            </Link>
+          </div>
+        </header>
+
+        {/* الخلفية عند فتح القائمة */}
+        {menuOpen && (
           <button
             type="button"
-            data-tour="app-menu-button"
-            onClick={() => setMenuOpen((current) => !current)}
-            className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-2xl",
-              "border border-white/10 bg-white/5",
-              "text-2xl text-foam",
-              "transition-all duration-200",
-              "hover:bg-white/10 hover:text-cyan-300",
-              "active:scale-95"
-            )}
-            aria-label={menuOpen ? "إغلاق القائمة" : "فتح القائمة"}
-            aria-expanded={menuOpen}
-          >
-            <span aria-hidden>{menuOpen ? "✕" : "☰"}</span>
-          </button>
-
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2"
-            aria-label="MARIS ACADEMY — الرئيسية"
-          >
-            <span className="text-2xl" aria-hidden>🌊</span>
-
-            <span className="font-grotesk text-xs font-bold leading-tight tracking-widest text-white sm:text-sm">
-              MARIS
-              <br />
-              ACADEMY{" "}
-              <span className="text-cyan-400">²⁰²⁷</span>
-            </span>
-          </Link>
-        </div>
-      </header>
-
-      {/* الخلفية عند فتح القائمة */}
-      {menuOpen && (
-        <button
-          type="button"
-          aria-label="إغلاق القائمة"
-          onClick={() => setMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
-        />
-      )}
-
-      {/* القائمة الجانبية */}
-      <aside
-        className={cn(
-          "fixed inset-y-0 right-0 z-50 w-[min(88vw,320px)]",
-          "border-l border-white/10",
-          "bg-navy-950/98 shadow-2xl backdrop-blur-2xl",
-          "transition-transform duration-300 ease-out",
-          menuOpen ? "translate-x-0" : "translate-x-full"
-        )}
-        aria-hidden={!menuOpen}
-      >
-        <div className="flex items-center justify-between border-b border-white/5 px-5 py-5">
-          <Link
-            href="/dashboard"
-            onClick={() => setMenuOpen(false)}
-            className="flex items-center gap-3"
-          >
-            <span className="text-3xl" aria-hidden>🌊</span>
-
-            <span className="font-grotesk text-sm font-bold leading-tight tracking-widest text-white">
-              MARIS
-              <br />
-              ACADEMY{" "}
-              <span className="text-cyan-400">²⁰²⁷</span>
-            </span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setMenuOpen(false)}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-foam/60 transition hover:bg-white/10 hover:text-white"
             aria-label="إغلاق القائمة"
-          >
-            ✕
-          </button>
-        </div>
+            onClick={() => setMenuOpen(false)}
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]"
+          />
+        )}
 
-        <nav
-          className="h-[calc(100vh-145px)] overflow-y-auto px-3 py-4"
-          aria-label="التنقل الرئيسي"
+        {/* القائمة الجانبية */}
+        <aside
+          className={cn(
+            "fixed inset-y-0 right-0 z-50 w-[min(88vw,320px)]",
+            "border-l border-white/10",
+            "bg-navy-950/98 shadow-2xl backdrop-blur-2xl",
+            "transition-transform duration-300 ease-out",
+            menuOpen ? "translate-x-0" : "translate-x-full"
+          )}
+          aria-hidden={!menuOpen}
         >
-          <div className="space-y-1">
-            {NAV_ITEMS.map((item) => (
+          <div className="flex items-center justify-between border-b border-white/5 px-5 py-5">
+            <Link
+              href="/dashboard"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-3"
+            >
+              <span className="text-3xl" aria-hidden>🌊</span>
+
+              <span className="font-grotesk text-sm font-bold leading-tight tracking-widest text-white">
+                MARIS
+                <br />
+                ACADEMY{" "}
+                <span className="text-cyan-400">²⁰²⁷</span>
+              </span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setMenuOpen(false)}
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-xl text-foam/60 transition hover:bg-white/10 hover:text-white"
+              aria-label="إغلاق القائمة"
+            >
+              ✕
+            </button>
+          </div>
+
+          <nav
+            className="h-[calc(100vh-145px)] overflow-y-auto px-3 py-4"
+            aria-label="التنقل الرئيسي"
+          >
+            <div className="space-y-1">
+              {NAV_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMenuOpen(false)}
+                  className={cn(
+                    "flex min-h-[50px] items-center gap-4 rounded-2xl px-4 py-3",
+                    "font-bold transition-all duration-200",
+                    isActive(pathname, item.href)
+                      ? "bg-gradient-to-l from-ocean-500/25 to-cyan-400/15 text-cyan-300 shadow-glow"
+                      : "text-foam/65 hover:bg-white/5 hover:text-foam"
+                  )}
+                >
+                  <span className="flex w-7 justify-center text-xl" aria-hidden>
+                    {item.icon}
+                  </span>
+
+                  <span>{item.label}</span>
+
+                  {isActive(pathname, item.href) && (
+                    <span className="mr-auto text-cyan-400">●</span>
+                  )}
+                </Link>
+              ))}
+
+              <div className="my-3 border-t border-white/5" />
+
               <Link
-                key={item.href}
-                href={item.href}
+                href={ABOUT_NAV_ITEM.href}
                 onClick={() => setMenuOpen(false)}
                 className={cn(
                   "flex min-h-[50px] items-center gap-4 rounded-2xl px-4 py-3",
                   "font-bold transition-all duration-200",
-                  isActive(pathname, item.href)
+                  isActive(pathname, ABOUT_NAV_ITEM.href)
                     ? "bg-gradient-to-l from-ocean-500/25 to-cyan-400/15 text-cyan-300 shadow-glow"
                     : "text-foam/65 hover:bg-white/5 hover:text-foam"
                 )}
               >
                 <span className="flex w-7 justify-center text-xl" aria-hidden>
-                  {item.icon}
+                  {ABOUT_NAV_ITEM.icon}
                 </span>
 
-                <span>{item.label}</span>
+                <span>{ABOUT_NAV_ITEM.label}</span>
 
-                {isActive(pathname, item.href) && (
+                {isActive(pathname, ABOUT_NAV_ITEM.href) && (
                   <span className="mr-auto text-cyan-400">●</span>
                 )}
               </Link>
-            ))}
 
-            <div className="my-3 border-t border-white/5" />
+              {isAdmin && (
+                <>
+                  <div className="my-3 border-t border-white/5" />
 
-            <Link
-              href={ABOUT_NAV_ITEM.href}
-              onClick={() => setMenuOpen(false)}
-              className={cn(
-                "flex min-h-[50px] items-center gap-4 rounded-2xl px-4 py-3",
-                "font-bold transition-all duration-200",
-                isActive(pathname, ABOUT_NAV_ITEM.href)
-                  ? "bg-gradient-to-l from-ocean-500/25 to-cyan-400/15 text-cyan-300 shadow-glow"
-                  : "text-foam/65 hover:bg-white/5 hover:text-foam"
+                  <Link
+                    href={ADMIN_NAV_ITEM.href}
+                    onClick={() => setMenuOpen(false)}
+                    className={cn(
+                      "flex min-h-[52px] items-center gap-4 rounded-2xl px-4 py-3",
+                      "border font-bold transition-all duration-200",
+                      isActive(pathname, ADMIN_NAV_ITEM.href)
+                        ? "border-amber-400/30 bg-gradient-to-l from-amber-500/20 to-cyan-400/10 text-amber-300 shadow-glow"
+                        : "border-amber-400/10 bg-amber-400/5 text-amber-300/80 hover:bg-amber-400/10 hover:text-amber-200"
+                    )}
+                  >
+                    <span className="flex w-7 justify-center text-xl" aria-hidden>
+                      👑
+                    </span>
+
+                    <span>لوحة الإدارة</span>
+
+                    {isActive(pathname, ADMIN_NAV_ITEM.href) && (
+                      <span className="mr-auto text-amber-300">●</span>
+                    )}
+                  </Link>
+                </>
               )}
+            </div>
+          </nav>
+
+          <div className="absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy-950/95 p-3">
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex min-h-[50px] w-full items-center gap-4 rounded-2xl px-4 py-3 font-bold text-red-300/80 transition-colors hover:bg-red-500/10 hover:text-red-300"
             >
               <span className="flex w-7 justify-center text-xl" aria-hidden>
-                {ABOUT_NAV_ITEM.icon}
+                🚪
               </span>
 
-              <span>{ABOUT_NAV_ITEM.label}</span>
-
-              {isActive(pathname, ABOUT_NAV_ITEM.href) && (
-                <span className="mr-auto text-cyan-400">●</span>
-              )}
-            </Link>
-
-            {isAdmin && (
-              <>
-                <div className="my-3 border-t border-white/5" />
-
-                <Link
-                  href={ADMIN_NAV_ITEM.href}
-                  onClick={() => setMenuOpen(false)}
-                  className={cn(
-                    "flex min-h-[52px] items-center gap-4 rounded-2xl px-4 py-3",
-                    "border font-bold transition-all duration-200",
-                    isActive(pathname, ADMIN_NAV_ITEM.href)
-                      ? "border-amber-400/30 bg-gradient-to-l from-amber-500/20 to-cyan-400/10 text-amber-300 shadow-glow"
-                      : "border-amber-400/10 bg-amber-400/5 text-amber-300/80 hover:bg-amber-400/10 hover:text-amber-200"
-                  )}
-                >
-                  <span className="flex w-7 justify-center text-xl" aria-hidden>
-                    👑
-                  </span>
-
-                  <span>لوحة الإدارة</span>
-
-                  {isActive(pathname, ADMIN_NAV_ITEM.href) && (
-                    <span className="mr-auto text-amber-300">●</span>
-                  )}
-                </Link>
-              </>
-            )}
+              تسجيل الخروج
+            </button>
           </div>
-        </nav>
+        </aside>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-white/5 bg-navy-950/95 p-3">
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="flex min-h-[50px] w-full items-center gap-4 rounded-2xl px-4 py-3 font-bold text-red-300/80 transition-colors hover:bg-red-500/10 hover:text-red-300"
-          >
-            <span className="flex w-7 justify-center text-xl" aria-hidden>
-              🚪
-            </span>
+        <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+          <div className="mx-auto w-full max-w-7xl">
+            {children}
+          </div>
+        </main>
 
-            تسجيل الخروج
-          </button>
-        </div>
-      </aside>
-
-      <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
-        <div className="mx-auto w-full max-w-7xl">
-          {children}
-        </div>
-      </main>
-
-      {/* الجولة تظهر للطالب بعد التأكد من صلاحياته فقط */}
-      {adminCheckedFor === session.user.id && (
-        <MarisTour
-          userId={session.user.id}
-          isAdmin={isAdmin}
-        />
-      )}
-    </div>
+        {/* الجولة تظهر للطالب بعد التأكد من صلاحياته فقط */}
+        {adminCheckedFor === session.user.id && (
+          <MarisTour
+            userId={session.user.id}
+            isAdmin={isAdmin}
+          />
+        )}
+      </div>
+    </StreamPreviewProvider>
   );
 }

@@ -7,6 +7,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 
 import { getSupabase } from "@/lib/supabase";
 import { getSession, getProfile } from "@/services/auth";
+import { useStreamPreview } from "@/contexts/stream-preview";
 
 import "react-pdf/dist/Page/TextLayer.css";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -74,6 +75,7 @@ function getFileName(path: string) {
 export default function LibraryResourcePage() {
   const params = useParams();
   const router = useRouter();
+  const { previewStream } = useStreamPreview();
 
   const resourceId = String(params.resourceId);
 
@@ -128,8 +130,12 @@ export default function LibraryResourcePage() {
         setLoading(true);
         setError("");
         setPdfError("");
+        setResource(null);
+        setSubject(null);
         setPdfUrl(null);
         setPdfPages(0);
+        setPdfWidth(0);
+        setPdfLoading(false);
 
         const supabase = getSupabase();
 
@@ -150,8 +156,11 @@ export default function LibraryResourcePage() {
           throw new Error("تعذر العثور على ملف الطالب.");
         }
 
-        if (!profile.stream) {
-          throw new Error("لم يتم تحديد شعبة الطالب.");
+        // الشعبة المستعملة في المعاينة فقط، من غير تغيير بيانات الحساب.
+        const effectiveStream = previewStream ?? profile.stream;
+
+        if (!effectiveStream) {
+          throw new Error("لم يتم تحديد شعبة الحساب أو المعاينة.");
         }
 
         const { data: resourceData, error: resourceError } =
@@ -182,6 +191,7 @@ export default function LibraryResourcePage() {
           throw new Error("هذا المورد غير موجود أو غير منشور.");
         }
 
+        // نتحقق أن المادة تابعة للشعبة الحالية أو للشعبة المعاينة.
         const { data: subjectData, error: subjectError } =
           await supabase
             .from("library_subjects")
@@ -195,7 +205,7 @@ export default function LibraryResourcePage() {
               `
             )
             .eq("id", resourceData.subject_id)
-            .eq("stream", profile.stream)
+            .eq("stream", effectiveStream)
             .eq("is_active", true)
             .maybeSingle();
 
@@ -204,7 +214,9 @@ export default function LibraryResourcePage() {
         }
 
         if (!subjectData) {
-          throw new Error("لا يمكنك الوصول إلى هذا المورد.");
+          throw new Error(
+            "هذا المورد لا ينتمي إلى الشعبة التي تعاينها، أو أنه غير متاح."
+          );
         }
 
         if (cancelled) {
@@ -216,9 +228,7 @@ export default function LibraryResourcePage() {
 
         /*
          * PDF مخزن في Supabase Storage.
-         *
-         * نستعمل Signed URL فقط للعرض داخل React PDF Viewer.
-         * لا نستعمل download هنا.
+         * نستعمل Signed URL للعرض داخل React PDF Viewer.
          */
         if (resourceData.pdf_url && isStoragePath(resourceData.pdf_url)) {
           setPdfLoading(true);
@@ -244,9 +254,7 @@ export default function LibraryResourcePage() {
             setPdfLoading(false);
           }
         } else if (resourceData.pdf_url) {
-          /*
-           * دعم روابط PDF الخارجية أيضاً.
-           */
+          // دعم روابط PDF الخارجية أيضاً.
           setPdfUrl(resourceData.pdf_url);
         }
       } catch (err) {
@@ -271,7 +279,7 @@ export default function LibraryResourcePage() {
     return () => {
       cancelled = true;
     };
-  }, [resourceId, router]);
+  }, [resourceId, router, previewStream]);
 
   if (loading) {
     return (
@@ -370,6 +378,12 @@ export default function LibraryResourcePage() {
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
                 {subject.icon || "📚"} {subject.name}
               </span>
+
+              {previewStream && (
+                <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300">
+                  👁️ معاينة الشعبة
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl font-black leading-tight sm:text-3xl">

@@ -1,10 +1,9 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
-import { ensureProfile } from "@/services/auth";
+import { useStreamPreview } from "@/contexts/stream-preview";
 import {
   listCoursesWithProgress,
   type CourseWithMeta,
@@ -23,9 +22,9 @@ import {
 // البيانات تأتي من Supabase مباشرة
 // ══════════════════════════════════════════════════════
 
-
-
 export default function CoursesPage() {
+  const { previewStream } = useStreamPreview();
+
   const [courses, setCourses] = useState<CourseWithMeta[] | null>(null);
   const [stream, setStream] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -36,15 +35,19 @@ export default function CoursesPage() {
     if (!supabase) return;
 
     setError(false);
+    setCourses(null);
 
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setCourses([]);
+        return;
+      }
 
-      // نجيب الشعبة فقط من البروفايل
+      // الشعبة الحقيقية تبقى محفوظة كما هي في Supabase
       const {
         data: profile,
         error: profileError,
@@ -58,10 +61,12 @@ export default function CoursesPage() {
         throw profileError;
       }
 
-      const userStream = profile?.stream ?? null;
+      // في وضع المعاينة نستخدم الشعبة المختارة للأدمن فقط
+      const userStream = previewStream ?? profile?.stream ?? null;
 
       setStream(userStream);
 
+      // التقدم المعروض يبقى التقدم الحقيقي للحساب الحالي
       const data = await listCoursesWithProgress(
         supabase,
         user.id,
@@ -80,9 +85,7 @@ export default function CoursesPage() {
       console.error("Courses error:", {
         message:
           supabaseError?.message ??
-          (err instanceof Error
-            ? err.message
-            : String(err)),
+          (err instanceof Error ? err.message : String(err)),
         code: supabaseError?.code,
         details: supabaseError?.details,
         hint: supabaseError?.hint,
@@ -91,10 +94,10 @@ export default function CoursesPage() {
 
       setError(true);
     }
-  }, []);
+  }, [previewStream]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   if (error) {
@@ -119,10 +122,6 @@ export default function CoursesPage() {
       course,
     ]);
   }
-
-
-
-
 
   // ══════════════════════════════════════════════════════
   // تنسيق السعر
@@ -181,9 +180,7 @@ export default function CoursesPage() {
 
                     <p className="mt-0.5 text-xs text-foam/40">
                       {subjectCourses.length}{" "}
-                      {subjectCourses.length === 1
-                        ? "دورة"
-                        : "دورات"}
+                      {subjectCourses.length === 1 ? "دورة" : "دورات"}
                     </p>
                   </div>
                 </div>
@@ -196,10 +193,7 @@ export default function CoursesPage() {
                       className="group flex flex-col overflow-hidden p-0"
                       hover
                     >
-                      {/* ═══════════════════════════════════
-                          صورة الدورة
-                      ═══════════════════════════════════ */}
-
+                      {/* صورة الدورة */}
                       <div className="relative aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-cyan-500/10 via-slate-900 to-teal-500/10">
                         {course.thumbnail_url ? (
                           <img
@@ -221,7 +215,6 @@ export default function CoursesPage() {
                           </div>
                         )}
 
-                        {/* Gradient */}
                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent" />
 
                         {/* نوع الدورة */}
@@ -246,10 +239,7 @@ export default function CoursesPage() {
                         </div>
                       </div>
 
-                      {/* ═══════════════════════════════════
-                          محتوى الدورة
-                      ═══════════════════════════════════ */}
-
+                      {/* محتوى الدورة */}
                       <div className="flex flex-1 flex-col gap-4 p-5">
                         {/* المادة + السعر */}
                         <div className="flex items-start justify-between gap-3">
@@ -263,7 +253,6 @@ export default function CoursesPage() {
                             </h3>
                           </div>
 
-                          {/* السعر */}
                           {!course.is_free && (
                             <div className="shrink-0 text-left">
                               <p className="text-lg font-extrabold text-amber-300">
@@ -286,10 +275,7 @@ export default function CoursesPage() {
                           <div className="min-h-[42px]" />
                         )}
 
-                        {/* ═══════════════════════════════════
-                            التقدم
-                        ═══════════════════════════════════ */}
-
+                        {/* التقدم الحقيقي */}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-foam/50">
@@ -319,10 +305,7 @@ export default function CoursesPage() {
                           </div>
                         </div>
 
-                        {/* ═══════════════════════════════════
-                            زر الدخول للدورة
-                        ═══════════════════════════════════ */}
-
+                        {/* الدخول للدورة */}
                         <Link
                           href={`/courses/${course.id}`}
                           className="btn-primary mt-auto flex w-full items-center justify-center gap-2"
@@ -361,6 +344,3 @@ export default function CoursesPage() {
     </div>
   );
 }
-
-
-

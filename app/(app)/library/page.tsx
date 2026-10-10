@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 import { getProfile } from "@/services/auth";
+import { useStreamPreview } from "@/contexts/stream-preview";
 
 type LibrarySubject = {
   id: string;
@@ -42,6 +43,8 @@ const RESOURCE_TYPE_ICONS: Record<string, string> = {
 };
 
 export default function LibraryPage() {
+  const { previewStream } = useStreamPreview();
+
   const [stream, setStream] = useState<string | null>(null);
   const [subjects, setSubjects] = useState<LibrarySubject[]>([]);
   const [resources, setResources] = useState<LibraryResource[]>([]);
@@ -49,6 +52,8 @@ export default function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadLibrary() {
       try {
         setLoading(true);
@@ -82,12 +87,16 @@ export default function LibraryPage() {
           return;
         }
 
-        if (!profile.stream) {
-          setError("لم يتم تحديد شعبة الطالب.");
+        // المعاينة تتقدم على الشعبة الحقيقية دون تعديل بيانات الحساب.
+        const effectiveStream = previewStream ?? profile.stream;
+
+        if (!effectiveStream) {
+          setStream(null);
+          setSubjects([]);
+          setResources([]);
+          setError("لم يتم تحديد شعبة الحساب.");
           return;
         }
-
-        setStream(profile.stream);
 
         const { data: subjectsData, error: subjectsError } =
           await supabase
@@ -95,7 +104,7 @@ export default function LibraryPage() {
             .select(
               "id, stream, name, icon, description, order_index, is_active"
             )
-            .eq("stream", profile.stream)
+            .eq("stream", effectiveStream)
             .eq("is_active", true)
             .order("order_index", { ascending: true })
             .order("name", { ascending: true });
@@ -106,6 +115,9 @@ export default function LibraryPage() {
 
         const loadedSubjects = (subjectsData ?? []) as LibrarySubject[];
 
+        if (cancelled) return;
+
+        setStream(effectiveStream);
         setSubjects(loadedSubjects);
 
         if (loadedSubjects.length === 0) {
@@ -129,8 +141,12 @@ export default function LibraryPage() {
           throw resourcesError;
         }
 
+        if (cancelled) return;
+
         setResources((resourcesData ?? []) as LibraryResource[]);
       } catch (err) {
+        if (cancelled) return;
+
         console.error("Library loading error:", err);
 
         setError(
@@ -139,12 +155,18 @@ export default function LibraryPage() {
             : "حدث خطأ أثناء تحميل مكتبة الدروس."
         );
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     loadLibrary();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewStream]);
 
   const resourcesBySubject = useMemo(() => {
     const map = new Map<string, LibraryResource[]>();
@@ -197,9 +219,7 @@ export default function LibraryPage() {
             تعذر تحميل مكتبة الدروس
           </h1>
 
-          <p className="text-sm leading-7 text-foam/60">
-            {error}
-          </p>
+          <p className="text-sm leading-7 text-foam/60">{error}</p>
         </section>
       </div>
     );
@@ -221,6 +241,9 @@ export default function LibraryPage() {
             {stream && (
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-foam/60">
                 🎓 {stream}
+                {previewStream && (
+                  <span className="mr-2 text-cyan-300">معاينة</span>
+                )}
               </span>
             )}
           </div>
@@ -236,9 +259,7 @@ export default function LibraryPage() {
 
           <div className="mt-5 flex flex-wrap gap-3">
             <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
-              <div className="text-xs font-bold text-foam/40">
-                المواد
-              </div>
+              <div className="text-xs font-bold text-foam/40">المواد</div>
 
               <div className="mt-1 text-xl font-black text-cyan-300">
                 {subjects.length}
@@ -246,9 +267,7 @@ export default function LibraryPage() {
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
-              <div className="text-xs font-bold text-foam/40">
-                الموارد
-              </div>
+              <div className="text-xs font-bold text-foam/40">الموارد</div>
 
               <div className="mt-1 text-xl font-black text-cyan-300">
                 {totalResources}
@@ -263,13 +282,11 @@ export default function LibraryPage() {
         <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 text-center">
           <div className="text-5xl">🌊</div>
 
-          <h2 className="mt-5 text-xl font-black">
-            المكتبة قيد التجهيز
-          </h2>
+          <h2 className="mt-5 text-xl font-black">المكتبة قيد التجهيز</h2>
 
           <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-foam/50">
-            لم تتم إضافة مواد أو موارد لشعبتك بعد. ستظهر هنا تلقائياً عند
-            نشرها من لوحة الإدارة.
+            لم تتم إضافة مواد أو موارد لهذه الشعبة بعد. ستظهر هنا تلقائياً
+            عند نشرها من لوحة الإدارة.
           </p>
         </section>
       ) : (
@@ -307,9 +324,7 @@ export default function LibraryPage() {
                     </span>
                   </div>
 
-                  <h2 className="mt-5 text-lg font-black">
-                    {subject.name}
-                  </h2>
+                  <h2 className="mt-5 text-lg font-black">{subject.name}</h2>
 
                   {subject.description && (
                     <p className="mt-2 line-clamp-2 text-sm leading-6 text-foam/50">
@@ -319,26 +334,21 @@ export default function LibraryPage() {
 
                   {subjectResources.length > 0 ? (
                     <div className="mt-5 space-y-2">
-                      {Object.entries(typeCounts).map(
-                        ([type, count]) => (
-                          <div
-                            key={type}
-                            className="flex items-center justify-between rounded-xl border border-white/5 bg-black/10 px-3 py-2"
-                          >
-                            <span className="flex items-center gap-2 text-sm font-bold text-foam/60">
-                              <span>
-                                {RESOURCE_TYPE_ICONS[type] ?? "📚"}
-                              </span>
+                      {Object.entries(typeCounts).map(([type, count]) => (
+                        <div
+                          key={type}
+                          className="flex items-center justify-between rounded-xl border border-white/5 bg-black/10 px-3 py-2"
+                        >
+                          <span className="flex items-center gap-2 text-sm font-bold text-foam/60">
+                            <span>{RESOURCE_TYPE_ICONS[type] ?? "📚"}</span>
+                            {RESOURCE_TYPE_LABELS[type] ?? type}
+                          </span>
 
-                              {RESOURCE_TYPE_LABELS[type] ?? type}
-                            </span>
-
-                            <span className="text-xs font-black text-cyan-300">
-                              {count}
-                            </span>
-                          </div>
-                        )
-                      )}
+                          <span className="text-xs font-black text-cyan-300">
+                            {count}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="mt-5 rounded-xl border border-dashed border-white/10 px-4 py-3 text-center text-xs font-bold text-foam/30">
@@ -364,4 +374,3 @@ export default function LibraryPage() {
     </div>
   );
 }
-

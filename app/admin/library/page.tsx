@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -16,18 +15,6 @@ type LibrarySubject = {
   is_active: boolean;
 };
 
-type LibraryResource = {
-  id: string;
-  subject_id: string;
-  title: string;
-  description: string | null;
-  resource_type: string;
-  content: string | null;
-  pdf_url: string | null;
-  year: number | null;
-  is_published: boolean;
-};
-
 const RESOURCE_TYPES = [
   { value: "summary", label: "📘 ملخص" },
   { value: "exercise", label: "📝 تمرين" },
@@ -36,11 +23,15 @@ const RESOURCE_TYPES = [
 ];
 
 const MAX_PDF_SIZE = 20 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_IMAGES = 20;
+const STORAGE_BUCKET = "library-pdfs";
 
 export default function AdminLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -48,6 +39,7 @@ export default function AdminLibraryPage() {
   const [showSubjectForm, setShowSubjectForm] = useState(false);
   const [showResourceForm, setShowResourceForm] = useState(false);
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
 
   const [subjectForm, setSubjectForm] = useState({
     stream: "",
@@ -109,9 +101,7 @@ export default function AdminLibraryPage() {
         .order("order_index", { ascending: true })
         .order("name", { ascending: true });
 
-      if (subjectsError) {
-        throw subjectsError;
-      }
+      if (subjectsError) throw subjectsError;
 
       setSubjects((data ?? []) as LibrarySubject[]);
     } catch (err) {
@@ -124,7 +114,6 @@ export default function AdminLibraryPage() {
 
   useEffect(() => {
     void loadLibrary();
-    // تحميل بيانات المكتبة عند فتح الصفحة.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -150,7 +139,9 @@ export default function AdminLibraryPage() {
       year: "",
       is_published: false,
     });
+
     setSelectedPdfFile(null);
+    setSelectedImages([]);
   }
 
   function openNewSubject() {
@@ -202,6 +193,57 @@ export default function AdminLibraryPage() {
     setSelectedPdfFile(file);
   }
 
+  function handleImagesSelection(fileList: FileList | null) {
+    setError("");
+    setSuccess("");
+
+    if (!fileList || fileList.length === 0) {
+      setSelectedImages([]);
+      return;
+    }
+
+    const files = Array.from(fileList);
+
+    if (files.length > MAX_IMAGES) {
+      setSelectedImages([]);
+      setError(`يمكنك اختيار ${MAX_IMAGES} صورة كحد أقصى لكل مورد.`);
+      return;
+    }
+
+    const invalidFile = files.find(
+      (file) => !file.type.startsWith("image/")
+    );
+
+    if (invalidFile) {
+      setSelectedImages([]);
+      setError(`الملف "${invalidFile.name}" ليس صورة صالحة.`);
+      return;
+    }
+
+    const oversizedFile = files.find(
+      (file) => file.size > MAX_IMAGE_SIZE
+    );
+
+    if (oversizedFile) {
+      setSelectedImages([]);
+      setError(
+        `الصورة "${oversizedFile.name}" تتجاوز الحجم المسموح وهو 5MB.`
+      );
+      return;
+    }
+
+    setSelectedImages(files);
+  }
+
+  function getSafeFileName(name: string) {
+    return (
+      name
+        .replace(/[^a-zA-Z0-9._-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "") || "file"
+    );
+  }
+
   async function uploadPdf(
     file: File,
     subjectId: string,
@@ -211,46 +253,72 @@ export default function AdminLibraryPage() {
       throw new Error("خدمة قاعدة البيانات غير متاحة حالياً.");
     }
 
-    const safeFileName = file.name
-      .replace(/[^a-zA-Z0-9._-]/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "");
-
-    const fileName = safeFileName || "document.pdf";
+    const fileName = getSafeFileName(file.name);
     const storagePath =
       `${subjectId}/${resourceId}-${Date.now()}-${fileName}`;
 
     const { error: uploadError } = await supabase.storage
-      .from("library-pdfs")
+      .from(STORAGE_BUCKET)
       .upload(storagePath, file, {
         contentType: "application/pdf",
         upsert: false,
       });
 
-    if (uploadError) {
-      throw uploadError;
-    }
+    if (uploadError) throw uploadError;
 
-    return `library-pdfs/${storagePath}`;
+    return `${STORAGE_BUCKET}/${storagePath}`;
   }
 
-  async function deleteUploadedPdf(path: string | null) {
-    if (!supabase || !path?.startsWith("library-pdfs/")) {
-      return;
+  async function uploadImages(
+    files: File[],
+    subjectId: string,
+    resourceId: string
+  ): Promise<string[]> {
+    if (!supabase) {
+      throw new Error("خدمة قاعدة البيانات غير متاحة حالياً.");
     }
 
-    const cleanPath = path.slice("library-pdfs/".length);
+    const uploadedPaths: string[] = [];
 
-    if (!cleanPath) {
-      return;
+    for (let index = 0; index < files.length; index++) {
+      const file = files[index];
+      const fileName = getSafeFileName(file.name);
+
+      const storagePath =
+        `${subjectId}/${resourceId}/images/${Date.now()}-${index}-${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, file, {
+          contentType: file.type,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      uploadedPaths.push(`${STORAGE_BUCKET}/${storagePath}`);
     }
+
+    return uploadedPaths;
+  }
+
+  async function deleteUploadedFiles(paths: string[]) {
+    if (!supabase || paths.length === 0) return;
+
+    const cleanPaths = paths
+      .filter((path) => path.startsWith(`${STORAGE_BUCKET}/`))
+      .map((path) => path.slice(`${STORAGE_BUCKET}/`.length));
+
+    if (cleanPaths.length === 0) return;
 
     const { error: removeError } = await supabase.storage
-      .from("library-pdfs")
-      .remove([cleanPath]);
+      .from(STORAGE_BUCKET)
+      .remove(cleanPaths);
 
     if (removeError) {
-      console.error("PDF cleanup error:", removeError);
+      console.error("Storage cleanup error:", removeError);
     }
   }
 
@@ -283,14 +351,11 @@ export default function AdminLibraryPage() {
         .from("library_subjects")
         .insert(payload);
 
-      if (insertError) {
-        throw insertError;
-      }
+      if (insertError) throw insertError;
 
-      setSuccess("تمت إضافة المادة بنجاح، وتقدر تلقاها في صفحة الإدارة.");
+      setSuccess("تمت إضافة المادة بنجاح.");
       setShowSubjectForm(false);
       resetSubjectForm();
-
       await loadLibrary();
     } catch (err) {
       console.error(err);
@@ -316,7 +381,9 @@ export default function AdminLibraryPage() {
     }
 
     if (selectedPdfFile && resourceForm.pdf_url.trim()) {
-      setError("اختر رفع PDF من جهازك أو استعمال رابط خارجي، وليس الاثنين معاً.");
+      setError(
+        "اختر رفع PDF من جهازك أو استعمال رابط خارجي، وليس الاثنين معاً."
+      );
       return;
     }
 
@@ -325,7 +392,7 @@ export default function AdminLibraryPage() {
     setSuccess("");
 
     let createdResourceId: string | null = null;
-    let uploadedPdfPath: string | null = null;
+    const uploadedPaths: string[] = [];
 
     try {
       const payload = {
@@ -335,6 +402,7 @@ export default function AdminLibraryPage() {
         resource_type: resourceForm.resource_type,
         content: resourceForm.content.trim() || null,
         pdf_url: resourceForm.pdf_url.trim() || null,
+        image_urls: [],
         year: resourceForm.year ? Number(resourceForm.year) : null,
         is_published: resourceForm.is_published,
         updated_at: new Date().toISOString(),
@@ -346,9 +414,7 @@ export default function AdminLibraryPage() {
         .select("id")
         .single();
 
-      if (insertError) {
-        throw insertError;
-      }
+      if (insertError) throw insertError;
 
       if (!insertedResource?.id) {
         throw new Error("لم يتم الحصول على معرف المورد.");
@@ -359,11 +425,13 @@ export default function AdminLibraryPage() {
       if (selectedPdfFile) {
         setUploadingPdf(true);
 
-        uploadedPdfPath = await uploadPdf(
+        const uploadedPdfPath = await uploadPdf(
           selectedPdfFile,
           resourceForm.subject_id,
           insertedResource.id
         );
+
+        uploadedPaths.push(uploadedPdfPath);
 
         const { error: pdfUpdateError } = await supabase
           .from("library_resources")
@@ -373,31 +441,55 @@ export default function AdminLibraryPage() {
           })
           .eq("id", insertedResource.id);
 
-        if (pdfUpdateError) {
-          throw pdfUpdateError;
-        }
+        if (pdfUpdateError) throw pdfUpdateError;
       }
 
+      if (selectedImages.length > 0) {
+        setUploadingImages(true);
+
+        const imagePaths = await uploadImages(
+          selectedImages,
+          resourceForm.subject_id,
+          insertedResource.id
+        );
+
+        uploadedPaths.push(...imagePaths);
+
+        const { error: imagesUpdateError } = await supabase
+          .from("library_resources")
+          .update({
+            image_urls: imagePaths,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", insertedResource.id);
+
+        if (imagesUpdateError) throw imagesUpdateError;
+      }
+
+      const mediaDescription = [
+        selectedPdfFile ? "PDF" : "",
+        selectedImages.length > 0
+          ? `${selectedImages.length} صورة`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" و");
+
       setSuccess(
-        selectedPdfFile
-          ? resourceForm.is_published
-            ? "تمت إضافة المورد ورفع PDF ونشره بنجاح."
-            : "تمت إضافة المورد ورفع PDF بنجاح. المورد محفوظ كمسودة."
-          : resourceForm.is_published
-            ? "تمت إضافة المورد ونشره بنجاح."
-            : "تمت إضافة المورد بنجاح. المورد محفوظ كمسودة."
+        `تمت إضافة المورد${mediaDescription ? ` ورفع ${mediaDescription}` : ""}${
+          resourceForm.is_published
+            ? " ونشره بنجاح."
+            : " بنجاح، وهو محفوظ كمسودة."
+        }`
       );
 
       setShowResourceForm(false);
       resetResourceForm();
-
       await loadLibrary();
     } catch (err) {
       console.error("Save resource error:", err);
 
-      if (uploadedPdfPath) {
-        await deleteUploadedPdf(uploadedPdfPath);
-      }
+      await deleteUploadedFiles(uploadedPaths);
 
       if (createdResourceId) {
         const { error: cleanupError } = await supabase
@@ -418,6 +510,7 @@ export default function AdminLibraryPage() {
     } finally {
       setSaving(false);
       setUploadingPdf(false);
+      setUploadingImages(false);
     }
   }
 
@@ -445,9 +538,7 @@ export default function AdminLibraryPage() {
             🌊 MARIS ACADEMY ²⁰²⁷
           </div>
 
-          <h1 className="text-3xl font-black">
-            📖 مكتبة الدروس
-          </h1>
+          <h1 className="text-3xl font-black">📖 مكتبة الدروس</h1>
 
           <p className="mt-2 text-sm text-slate-300">
             إضافة المواد والموارد ونشرها للطلاب.
@@ -502,9 +593,7 @@ export default function AdminLibraryPage() {
           <section className="rounded-3xl border border-cyan-400/20 bg-cyan-950/20 p-6">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-black">
-                  ➕ إضافة مادة
-                </h2>
+                <h2 className="text-xl font-black">➕ إضافة مادة</h2>
                 <p className="mt-1 text-sm text-slate-400">
                   أدخل معلومات المادة، وبعد الحفظ تلقاها في صفحة الإدارة.
                 </p>
@@ -525,9 +614,7 @@ export default function AdminLibraryPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-2 block text-sm font-bold">
-                  الشعبة
-                </label>
+                <label className="mb-2 block text-sm font-bold">الشعبة</label>
                 <input
                   value={subjectForm.stream}
                   onChange={(event) =>
@@ -559,9 +646,7 @@ export default function AdminLibraryPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-bold">
-                  الأيقونة
-                </label>
+                <label className="mb-2 block text-sm font-bold">الأيقونة</label>
                 <input
                   value={subjectForm.icon}
                   onChange={(event) =>
@@ -592,9 +677,7 @@ export default function AdminLibraryPage() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-bold">
-                  الوصف
-                </label>
+                <label className="mb-2 block text-sm font-bold">الوصف</label>
                 <textarea
                   value={subjectForm.description}
                   onChange={(event) =>
@@ -640,11 +723,9 @@ export default function AdminLibraryPage() {
           <section className="rounded-3xl border border-emerald-400/20 bg-emerald-950/20 p-6">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-black">
-                  📚 إضافة مورد جديد
-                </h2>
+                <h2 className="text-xl font-black">📚 إضافة مورد جديد</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  يمكنك كتابة المحتوى أو رفع PDF ونشر المورد للطلاب.
+                  اكتب المحتوى أو ارفع PDF أو عدة صور للمورد نفسه.
                 </p>
               </div>
 
@@ -663,9 +744,7 @@ export default function AdminLibraryPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-2 block text-sm font-bold">
-                  المادة
-                </label>
+                <label className="mb-2 block text-sm font-bold">المادة</label>
                 <select
                   value={resourceForm.subject_id}
                   onChange={(event) =>
@@ -708,9 +787,7 @@ export default function AdminLibraryPage() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-bold">
-                  العنوان
-                </label>
+                <label className="mb-2 block text-sm font-bold">العنوان</label>
                 <input
                   value={resourceForm.title}
                   onChange={(event) =>
@@ -725,9 +802,7 @@ export default function AdminLibraryPage() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="mb-2 block text-sm font-bold">
-                  الوصف
-                </label>
+                <label className="mb-2 block text-sm font-bold">الوصف</label>
                 <textarea
                   value={resourceForm.description}
                   onChange={(event) =>
@@ -759,8 +834,74 @@ export default function AdminLibraryPage() {
                   className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 outline-none focus:border-emerald-400"
                 />
                 <p className="mt-2 text-xs text-slate-500">
-                  اختياري إذا كان المورد PDF فقط.
+                  اختياري إذا كان المورد عبارة عن PDF أو صور.
                 </p>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-bold">
+                  📸 صور المورد
+                </label>
+                <div className="rounded-2xl border border-dashed border-cyan-400/30 bg-cyan-400/5 p-4">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(event) =>
+                      handleImagesSelection(event.target.files)
+                    }
+                    className="block w-full cursor-pointer text-sm text-slate-300"
+                  />
+
+                  <p className="mt-3 text-xs leading-6 text-slate-500">
+                    اختر حتى 20 صورة من الهاتف أو الكمبيوتر. الحد الأقصى لكل
+                    صورة 5MB. تقدر تختار الصور كامل دفعة واحدة.
+                  </p>
+
+                  {selectedImages.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      <p className="font-bold text-cyan-200">
+                        تم اختيار {selectedImages.length} صورة
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                        {selectedImages.map((file, index) => (
+                          <div
+                            key={`${file.name}-${file.lastModified}-${index}`}
+                            className="overflow-hidden rounded-xl border border-white/10 bg-slate-900"
+                          >
+                            <div className="aspect-square bg-white/5">
+                              <img
+                                src={URL.createObjectURL(file)}
+                                alt={file.name}
+                                className="h-full w-full object-contain"
+                              />
+                            </div>
+                            <div className="p-2">
+                              <p
+                                className="truncate text-xs text-slate-300"
+                                title={file.name}
+                              >
+                                {file.name}
+                              </p>
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedImages([])}
+                        className="rounded-xl bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300"
+                      >
+                        إزالة الصور المختارة
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="md:col-span-2">
@@ -778,7 +919,7 @@ export default function AdminLibraryPage() {
                   />
 
                   <p className="mt-3 text-xs leading-6 text-slate-500">
-                    يمكنك اختيار PDF من الكمبيوتر أو الهاتف. الحد الأقصى 20MB.
+                    اختياري. الحد الأقصى 20MB. تقدر تستعمل PDF والصور مع بعض.
                   </p>
 
                   {selectedPdfFile && (
@@ -827,9 +968,7 @@ export default function AdminLibraryPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-bold">
-                  السنة
-                </label>
+                <label className="mb-2 block text-sm font-bold">السنة</label>
                 <input
                   type="number"
                   value={resourceForm.year}
@@ -863,14 +1002,16 @@ export default function AdminLibraryPage() {
             <button
               type="button"
               onClick={saveResource}
-              disabled={saving || uploadingPdf}
+              disabled={saving || uploadingPdf || uploadingImages}
               className="mt-5 rounded-2xl bg-emerald-500 px-6 py-3 font-black text-slate-950 disabled:opacity-50"
             >
-              {uploadingPdf
-                ? "⬆️ جاري رفع PDF..."
-                : saving
-                  ? "جاري الحفظ..."
-                  : "💾 حفظ المورد"}
+              {uploadingImages
+                ? "⬆️ جاري رفع الصور..."
+                : uploadingPdf
+                  ? "⬆️ جاري رفع PDF..."
+                  : saving
+                    ? "جاري الحفظ..."
+                    : "💾 حفظ المورد"}
             </button>
           </section>
         )}

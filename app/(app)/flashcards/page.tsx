@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -84,14 +83,14 @@ export default function FlashcardsPage() {
 
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black">اختار المادة</h2>
+          <h2 className="text-xl font-black">اختار طريقة الحفظ</h2>
           <p className="mt-1 text-sm text-foam/45">
-            ابدأ رحلة الحفظ تاعك
+            البطاقات والخرائط التفاعلية في مكان واحد
           </p>
         </div>
 
         <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-cyan-300">
-          مادتان
+          3 خيارات
         </span>
       </div>
 
@@ -152,6 +151,52 @@ export default function FlashcardsPage() {
             </div>
           </Link>
         ))}
+
+        <Link
+          href="/flashcards/maps"
+          className="group relative block overflow-hidden rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-400/10 via-cyan-400/5 to-blue-500/10 p-5 transition duration-300 hover:-translate-y-1 hover:border-emerald-300/50 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 sm:p-6"
+        >
+          <div className="pointer-events-none absolute -left-10 -top-10 h-36 w-36 rounded-full bg-emerald-400/10 blur-3xl transition group-hover:bg-emerald-400/20" />
+
+          <div className="relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-400/10 text-4xl">
+                🗺️
+              </div>
+
+              <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[10px] font-black tracking-widest text-emerald-300">
+                INTERACTIVE MAPS
+              </span>
+            </div>
+
+            <h3 className="mt-6 text-2xl font-black">
+              الخرائط التفاعلية
+            </h3>
+
+            <p className="mt-2 min-h-12 text-sm leading-7 text-foam/60">
+              تعلّم مواقع الدول، استكشف الخريطة، وحضّر روحك لحفظ خرائط
+              التاريخ والجغرافيا.
+            </p>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-xs font-bold text-foam/65">
+                خرائط العالم
+              </span>
+              <span className="rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-xs font-bold text-foam/65">
+                استكشاف الدول
+              </span>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
+              <span className="text-sm font-bold text-foam/60 transition group-hover:text-white">
+                افتح الخريطة
+              </span>
+              <span className="text-xl text-emerald-300 transition-transform duration-300 group-hover:-translate-x-1">
+                ←
+              </span>
+            </div>
+          </div>
+        </Link>
       </section>
 
       <section className="mt-6 rounded-2xl border border-white/5 bg-white/[0.02] p-4">

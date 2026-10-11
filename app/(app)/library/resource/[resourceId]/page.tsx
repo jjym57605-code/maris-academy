@@ -25,6 +25,7 @@ type Resource = {
   resource_type: string;
   content: string | null;
   pdf_url: string | null;
+  image_urls: string[] | null;
   year: number | null;
   is_published: boolean;
 };
@@ -88,6 +89,9 @@ export default function LibraryResourcePage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
 
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
+
   const [pdfPages, setPdfPages] = useState(0);
   const [pdfWidth, setPdfWidth] = useState(0);
 
@@ -133,6 +137,8 @@ export default function LibraryResourcePage() {
         setResource(null);
         setSubject(null);
         setPdfUrl(null);
+        setImageUrls([]);
+        setImagesLoading(false);
         setPdfPages(0);
         setPdfWidth(0);
         setPdfLoading(false);
@@ -156,7 +162,7 @@ export default function LibraryResourcePage() {
           throw new Error("تعذر العثور على ملف الطالب.");
         }
 
-        // الشعبة المستعملة في المعاينة فقط، من غير تغيير بيانات الحساب.
+        // الشعبة المستعملة في المعاينة فقط، دون تغيير بيانات الحساب.
         const effectiveStream = previewStream ?? profile.stream;
 
         if (!effectiveStream) {
@@ -166,19 +172,18 @@ export default function LibraryResourcePage() {
         const { data: resourceData, error: resourceError } =
           await supabase
             .from("library_resources")
-            .select(
-              `
-                id,
-                subject_id,
-                title,
-                description,
-                resource_type,
-                content,
-                pdf_url,
-                year,
-                is_published
-              `
-            )
+            .select(`
+              id,
+              subject_id,
+              title,
+              description,
+              resource_type,
+              content,
+              pdf_url,
+              image_urls,
+              year,
+              is_published
+            `)
             .eq("id", resourceId)
             .eq("is_published", true)
             .maybeSingle();
@@ -191,19 +196,17 @@ export default function LibraryResourcePage() {
           throw new Error("هذا المورد غير موجود أو غير منشور.");
         }
 
-        // نتحقق أن المادة تابعة للشعبة الحالية أو للشعبة المعاينة.
+        // التحقق من أن المادة تابعة للشعبة الحالية أو المعاينة.
         const { data: subjectData, error: subjectError } =
           await supabase
             .from("library_subjects")
-            .select(
-              `
-                id,
-                name,
-                icon,
-                stream,
-                is_active
-              `
-            )
+            .select(`
+              id,
+              name,
+              icon,
+              stream,
+              is_active
+            `)
             .eq("id", resourceData.subject_id)
             .eq("stream", effectiveStream)
             .eq("is_active", true)
@@ -227,11 +230,65 @@ export default function LibraryResourcePage() {
         setSubject(subjectData as Subject);
 
         /*
-         * PDF مخزن في Supabase Storage.
-         * نستعمل Signed URL للعرض داخل React PDF Viewer.
+         * تجهيز روابط الصور.
+         * الملفات المخزنة في Supabase تستعمل Signed URLs،
+         * أما روابط الصور الخارجية فتبقى كما هي.
+         */
+        const storedImagePaths: string[] = Array.isArray(
+          resourceData.image_urls
+        )
+          ? resourceData.image_urls.filter(
+              (path): path is string =>
+                typeof path === "string" && path.trim().length > 0
+            )
+          : [];
+
+        if (storedImagePaths.length > 0) {
+          setImagesLoading(true);
+
+          const resolvedImages = await Promise.all(
+            storedImagePaths.map(async (path) => {
+              if (!isStoragePath(path)) {
+                return path;
+              }
+
+              const storagePath = cleanStoragePath(path);
+
+              const { data: signedData, error: signedError } =
+                await supabase.storage
+                  .from("library-pdfs")
+                  .createSignedUrl(storagePath, 60 * 60);
+
+              if (signedError) {
+                console.error(
+                  "Signed image URL error:",
+                  signedError
+                );
+                return null;
+              }
+
+              return signedData.signedUrl;
+            })
+          );
+
+          if (!cancelled) {
+            setImageUrls(
+              resolvedImages.filter(
+                (url): url is string =>
+                  typeof url === "string" && url.length > 0
+              )
+            );
+            setImagesLoading(false);
+          }
+        }
+
+        /*
+         * تجهيز PDF المخزن في Supabase Storage.
          */
         if (resourceData.pdf_url && isStoragePath(resourceData.pdf_url)) {
-          setPdfLoading(true);
+          if (!cancelled) {
+            setPdfLoading(true);
+          }
 
           const storagePath = cleanStoragePath(resourceData.pdf_url);
 
@@ -253,7 +310,7 @@ export default function LibraryResourcePage() {
           if (!cancelled) {
             setPdfLoading(false);
           }
-        } else if (resourceData.pdf_url) {
+        } else if (resourceData.pdf_url && !cancelled) {
           // دعم روابط PDF الخارجية أيضاً.
           setPdfUrl(resourceData.pdf_url);
         }
@@ -270,11 +327,13 @@ export default function LibraryResourcePage() {
       } finally {
         if (!cancelled) {
           setLoading(false);
+          setImagesLoading(false);
+          setPdfLoading(false);
         }
       }
     }
 
-    loadResource();
+    void loadResource();
 
     return () => {
       cancelled = true;
@@ -287,7 +346,6 @@ export default function LibraryResourcePage() {
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-4">
           <div className="text-center">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-cyan-400" />
-
             <p className="text-sm text-slate-400">
               جاري تحميل المورد...
             </p>
@@ -397,6 +455,60 @@ export default function LibraryResourcePage() {
             )}
           </div>
         </section>
+
+        {/* Images */}
+        {(imageUrls.length > 0 || imagesLoading) && (
+          <section className="mb-6 overflow-hidden rounded-3xl border border-cyan-400/20 bg-white/[0.03]">
+            <div className="border-b border-white/10 p-5 sm:p-6">
+              <h2 className="font-bold">🖼️ صور المورد</h2>
+
+              <p className="mt-1 text-xs text-slate-500">
+                {imageUrls.length > 0
+                  ? `${imageUrls.length} صورة`
+                  : "جاري تجهيز الصور..."}
+              </p>
+            </div>
+
+            {imagesLoading && imageUrls.length === 0 ? (
+              <div className="flex min-h-32 items-center justify-center p-6">
+                <div className="text-center">
+                  <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-white/10 border-t-cyan-400" />
+                  <p className="text-sm text-slate-400">
+                    جاري تحميل الصور...
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:p-6">
+                {imageUrls.map((url, index) => (
+                  <a
+                    key={`${url}-${index}`}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block overflow-hidden rounded-2xl border border-white/10 bg-black/20 transition hover:border-cyan-400/40"
+                    title="افتح الصورة بالحجم الكامل"
+                  >
+                    <img
+                      src={url}
+                      alt={`${resource.title} - الصورة ${index + 1}`}
+                      loading="lazy"
+                      className="max-h-[800px] w-full object-contain transition duration-300 group-hover:scale-[1.01]"
+                      onError={(event) => {
+                        event.currentTarget.alt =
+                          "تعذر تحميل هذه الصورة";
+                      }}
+                    />
+
+                    <div className="border-t border-white/10 px-3 py-2 text-center text-xs text-slate-400">
+                      الصورة {index + 1} · اضغط لفتح الحجم الكامل
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* PDF */}
         {hasPdf && (

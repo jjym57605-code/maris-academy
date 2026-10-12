@@ -46,10 +46,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await signIn(
-        supabase,
-        email.trim(),
-        password
+      await signIn(supabase, email.trim(), password);
+
+      window.sessionStorage.setItem(
+        "maris-wave-pending",
+        "true"
       );
 
       router.replace("/dashboard");
@@ -87,10 +88,7 @@ export default function LoginPage() {
     const redirectTo =
       `${window.location.origin}/reset-password`;
 
-    console.log(
-      "🔥 PASSWORD RESET REDIRECT:",
-      redirectTo
-    );
+    console.log("🔥 PASSWORD RESET REDIRECT:", redirectTo);
 
     setResetting(true);
 
@@ -98,9 +96,7 @@ export default function LoginPage() {
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(
           email.trim(),
-          {
-            redirectTo,
-          }
+          { redirectTo }
         );
 
       if (resetError) {
@@ -111,10 +107,7 @@ export default function LoginPage() {
         "تم إرسال رابط استعادة كلمة المرور إلى بريدك الإلكتروني."
       );
     } catch (err) {
-      console.error(
-        "PASSWORD RESET ERROR:",
-        err
-      );
+      console.error("PASSWORD RESET ERROR:", err);
 
       setError(
         "تعذر إرسال رابط الاستعادة. تحقق من البريد وحاول مرة أخرى."
@@ -222,5 +215,3 @@ export default function LoginPage() {
     </AuthLayout>
   );
 }
-
-

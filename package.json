@@ -9,6 +9,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.1",
     "@supabase/supabase-js": "2.47.10",
     "i18n-iso-countries": "^7.14.0",
     "leaflet": "^1.9.4",
@@ -17,6 +19,7 @@
     "react-dom": "19.0.0",
     "react-leaflet": "^5.0.0",
     "react-pdf": "^11.0.0",
+    "three": "^0.186.1",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2"
   },

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -19,6 +20,9 @@ import {
 interface ReelCardProps {
   reel: Reel;
   likeState: ReelLikeState;
+  commentCount: number;
+  muted: boolean;
+  onToggleMute: () => void;
   onLikeChange: (reelId: string, liked: boolean) => void;
   onCommentCountChange: (reelId: string, count: number) => void;
 }
@@ -26,6 +30,9 @@ interface ReelCardProps {
 function ReelCard({
   reel,
   likeState,
+  commentCount,
+  muted,
+  onToggleMute,
   onLikeChange,
   onCommentCountChange,
 }: ReelCardProps) {
@@ -34,7 +41,6 @@ function ReelCard({
   const viewedRef = useRef(false);
   const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [muted, setMuted] = useState(true);
   const [isLiking, setIsLiking] = useState(false);
 
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -44,6 +50,14 @@ function ReelCard({
 
   const [commentText, setCommentText] = useState("");
   const [commentSending, setCommentSending] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    video.muted = muted;
+  }, [muted]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -97,15 +111,6 @@ function ReelCard({
       }
     };
   }, [reel.id]);
-
-  const toggleMute = () => {
-    const video = videoRef.current;
-
-    if (!video) return;
-
-    video.muted = !video.muted;
-    setMuted(video.muted);
-  };
 
   const handleLike = async () => {
     if (isLiking) return;
@@ -195,10 +200,7 @@ function ReelCard({
       setComments((current) => [newComment, ...current]);
       setCommentText("");
 
-      onCommentCountChange(
-        reel.id,
-        comments.length + 1
-      );
+      onCommentCountChange(reel.id, comments.length + 1);
     } catch (err) {
       console.error("Add comment error:", err);
 
@@ -215,9 +217,7 @@ function ReelCard({
     }
   };
 
-  const handleDeleteComment = async (
-    commentId: string
-  ) => {
+  const handleDeleteComment = async (commentId: string) => {
     const supabase = getSupabase();
 
     if (!supabase) {
@@ -225,20 +225,14 @@ function ReelCard({
     }
 
     try {
-      await deleteReelComment(
-        supabase,
-        commentId
-      );
+      await deleteReelComment(supabase, commentId);
 
       setComments((current) => {
         const updated = current.filter(
           (comment) => comment.id !== commentId
         );
 
-        onCommentCountChange(
-          reel.id,
-          updated.length
-        );
+        onCommentCountChange(reel.id, updated.length);
 
         return updated;
       });
@@ -272,7 +266,7 @@ function ReelCard({
 
       <button
         type="button"
-        onClick={toggleMute}
+        onClick={onToggleMute}
         className="absolute left-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/50 text-lg backdrop-blur-md transition hover:bg-black/70"
         aria-label={muted ? "تشغيل الصوت" : "كتم الصوت"}
       >
@@ -307,14 +301,10 @@ function ReelCard({
           className="flex h-14 w-14 flex-col items-center justify-center rounded-full border border-white/10 bg-black/50 text-white backdrop-blur-md transition hover:bg-black/70"
           aria-label="التعليقات"
         >
-          <span className="text-2xl leading-none">
-            💬
-          </span>
+          <span className="text-2xl leading-none">💬</span>
 
           <span className="mt-1 text-[10px] font-bold text-white/80">
-            {commentsLoaded
-              ? comments.length
-              : "…"}
+            {commentCount}
           </span>
         </button>
       </div>
@@ -377,9 +367,7 @@ function ReelCard({
             <div className="flex items-end gap-2">
               <textarea
                 value={commentText}
-                onChange={(event) =>
-                  setCommentText(event.target.value)
-                }
+                onChange={(event) => setCommentText(event.target.value)}
                 maxLength={500}
                 rows={2}
                 placeholder="اكتب تعليقك..."
@@ -389,10 +377,7 @@ function ReelCard({
               <button
                 type="button"
                 onClick={handleAddComment}
-                disabled={
-                  commentSending ||
-                  !commentText.trim()
-                }
+                disabled={commentSending || !commentText.trim()}
                 className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-lg text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="إرسال التعليق"
               >
@@ -422,18 +407,9 @@ function ReelCard({
 
           <div className="mt-4 flex items-center gap-4 text-xs font-semibold text-white/60">
             <span>🌊 MARIS ACADEMY</span>
-
-            <span>
-              👁️ {reel.views_count}
-            </span>
-
-            <span>
-              ❤️ {likeState.count}
-            </span>
-
-            <span>
-              💬 {commentsLoaded ? comments.length : 0}
-            </span>
+            <span>👁️ {reel.views_count}</span>
+            <span>❤️ {likeState.count}</span>
+            <span>💬 {commentCount}</span>
           </div>
         </div>
       </div>
@@ -511,6 +487,7 @@ function CommentItem({
 
 export default function ReelsPage() {
   const [reels, setReels] = useState<Reel[] | null>(null);
+  const [muted, setMuted] = useState(true);
 
   const [likeStates, setLikeStates] = useState<
     Record<string, ReelLikeState>
@@ -546,13 +523,17 @@ export default function ReelsPage() {
         const counts: Record<string, number> = {};
 
         for (const reel of data) {
-          const { count } = await supabase
+          const { count, error: countError } = await supabase
             .from("reel_comments")
             .select("id", {
               count: "exact",
               head: true,
             })
             .eq("reel_id", reel.id);
+
+          if (countError) {
+            throw countError;
+          }
 
           counts[reel.id] = count ?? 0;
         }
@@ -567,10 +548,7 @@ export default function ReelsPage() {
     loadReels();
   }, []);
 
-  const handleLikeChange = (
-    reelId: string,
-    liked: boolean
-  ) => {
+  const handleLikeChange = (reelId: string, liked: boolean) => {
     setLikeStates((current) => {
       const previous = current[reelId] ?? {
         count: 0,
@@ -581,19 +559,13 @@ export default function ReelsPage() {
         ...current,
         [reelId]: {
           liked,
-          count: Math.max(
-            0,
-            previous.count + (liked ? 1 : -1)
-          ),
+          count: Math.max(0, previous.count + (liked ? 1 : -1)),
         },
       };
     });
   };
 
-  const handleCommentCountChange = (
-    reelId: string,
-    count: number
-  ) => {
+  const handleCommentCountChange = (reelId: string, count: number) => {
     setCommentCounts((current) => ({
       ...current,
       [reelId]: count,
@@ -635,9 +607,7 @@ export default function ReelsPage() {
         className="flex min-h-[70vh] items-center justify-center"
       >
         <div className="text-center">
-          <div className="mb-4 animate-pulse text-5xl">
-            🎬
-          </div>
+          <div className="mb-4 animate-pulse text-5xl">🎬</div>
 
           <p className="text-sm font-semibold text-slate-400">
             جاري تحميل الريلز...
@@ -703,6 +673,9 @@ export default function ReelsPage() {
             <ReelCard
               key={reel.id}
               reel={reel}
+              muted={muted}
+              commentCount={commentCounts[reel.id] ?? 0}
+              onToggleMute={() => setMuted((current) => !current)}
               likeState={
                 likeStates[reel.id] ?? {
                   count: 0,
@@ -710,9 +683,7 @@ export default function ReelsPage() {
                 }
               }
               onLikeChange={handleLikeChange}
-              onCommentCountChange={
-                handleCommentCountChange
-              }
+              onCommentCountChange={handleCommentCountChange}
             />
           ))}
         </div>

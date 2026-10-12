@@ -1,21 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-// ══════════════════════════════════════════════════════
-// MARIS ACADEMY ²⁰²⁷
-// لوحة الإدارة — الإحصائيات الحية
-//
-// البيانات:
-// Supabase → مباشرة
-//
-// التحديث:
-// 1. Supabase Realtime
-// 2. Polling كل 5 ثوانٍ كـ fallback
-// ══════════════════════════════════════════════════════
 
 type Profile = {
   id: string;
@@ -30,12 +17,12 @@ type XPRow = {
   amount: number | null;
 };
 
-type LessonProgress = {
+type ProgressRow = {
   user_id: string;
   lesson_id: string;
 };
 
-type QuizAttempt = {
+type Attempt = {
   user_id: string;
   quiz_id: string;
   score: number | null;
@@ -54,832 +41,488 @@ type Reel = {
   views_count: number | null;
 };
 
-type ReelInteraction = {
+type Interaction = {
   reel_id: string;
 };
 
-type DataState = {
+type StatsData = {
   profiles: Profile[];
-  xpRows: XPRow[];
-  lessonProgress: LessonProgress[];
-  quizAttempts: QuizAttempt[];
+  xp: XPRow[];
+  progress: ProgressRow[];
+  totalLessons: number;
+  attempts: Attempt[];
   quizzes: Quiz[];
   reels: Reel[];
-  reelLikes: ReelInteraction[];
-  reelComments: ReelInteraction[];
-  totalLessons: number;
+  likes: Interaction[];
+  comments: Interaction[];
 };
 
-const EMPTY_DATA: DataState = {
+const EMPTY_DATA: StatsData = {
   profiles: [],
-  xpRows: [],
-  lessonProgress: [],
-  quizAttempts: [],
+  xp: [],
+  progress: [],
+  totalLessons: 0,
+  attempts: [],
   quizzes: [],
   reels: [],
-  reelLikes: [],
-  reelComments: [],
-  totalLessons: 0,
+  likes: [],
+  comments: [],
 };
 
-export default function AdminStatsPage() {
-  const [data, setData] = useState<DataState>(EMPTY_DATA);
+const numberFormat = (value: number) =>
+  new Intl.NumberFormat("fr-FR").format(value);
 
+function fullName(profile: Profile) {
+  const name = [
+    profile.first_name,
+    profile.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return name || "طالب بدون اسم";
+}
+
+function shortName(profile: Profile) {
+  return fullName(profile);
+}
+
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/10 bg-slate-900/75 p-5 shadow-xl shadow-black/10">
+      <div className="mb-5">
+        <h2 className="text-lg font-bold text-white">{title}</h2>
+        {subtitle && (
+          <p className="mt-1 text-sm text-slate-400">
+            {subtitle}
+          </p>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  description,
+  icon,
+  accent = "cyan",
+}: {
+  title: string;
+  value: number;
+  description: string;
+  icon: string;
+  accent?: "cyan" | "violet" | "emerald" | "amber";
+}) {
+  const accents = {
+    cyan: "border-cyan-400/20 from-cyan-500/15",
+    violet: "border-violet-400/20 from-violet-500/15",
+    emerald: "border-emerald-400/20 from-emerald-500/15",
+    amber: "border-amber-400/20 from-amber-500/15",
+  };
+
+  return (
+    <div
+      className={`rounded-2xl border bg-gradient-to-br ${accents[accent]} to-slate-900 p-5`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-slate-300">{title}</p>
+        <span className="text-2xl" aria-hidden="true">
+          {icon}
+        </span>
+      </div>
+
+      <p className="mt-4 break-words text-3xl font-black tracking-tight text-white">
+        {numberFormat(value)}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-400">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function EmptyMessage({ text }: { text: string }) {
+  return (
+    <p className="rounded-xl border border-dashed border-white/10 p-5 text-center text-sm text-slate-400">
+      {text}
+    </p>
+  );
+}
+
+export default function NewAdminStatsPage() {
+  const [data, setData] = useState<StatsData>(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const [error, setError] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const [isRealtimeConnected, setIsRealtimeConnected] =
-    useState(false);
-
-  const mountedRef = useRef(true);
-  const loadingRef = useRef(false);
-
-  // ══════════════════════════════════════════════════════
-  // تحميل البيانات الحقيقية من Supabase
-  // ══════════════════════════════════════════════════════
-
-  const loadStats = useCallback(
-    async (options?: { silent?: boolean }) => {
-      const silent = options?.silent ?? false;
-
-      if (loadingRef.current) {
-        return;
-      }
-
-      loadingRef.current = true;
-
-      try {
-        if (!silent) {
-          setLoading(true);
-        } else {
-          setRefreshing(true);
-        }
-
-        setError(null);
-
-        const supabase = getSupabase();
-
-        if (!supabase) {
-          throw new Error(
-            "تعذر الاتصال بـ Supabase. تحقق من ملف .env.local."
-          );
-        }
-
-        // ────────────────────────────────────────────────
-        // أولاً: نتحقق من الجلسة
-        // لا نستعمل getUser مباشرة هنا حتى لا نرمي
-        // AuthSessionMissingError أثناء بداية تحميل الصفحة.
-        // ────────────────────────────────────────────────
-
-        const {
-          data: sessionData,
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        const session = sessionData.session;
-
-        if (!session) {
-          throw new Error(
-            "جلسة تسجيل الدخول غير موجودة. أعد تسجيل الدخول إلى حساب الأدمن."
-          );
-        }
-
-        // ────────────────────────────────────────────────
-        // التحقق من أن المستخدم أدمن
-        // ────────────────────────────────────────────────
-
-        const {
-          data: adminCheck,
-          error: adminError,
-        } = await supabase.rpc("is_current_user_admin");
-
-        if (adminError) {
-          throw adminError;
-        }
-
-        if (!adminCheck) {
-          throw new Error(
-            "ليس لديك صلاحية الوصول إلى الإحصائيات."
-          );
-        }
-
-        // ────────────────────────────────────────────────
-        // جلب كل البيانات الحقيقية
-        // ────────────────────────────────────────────────
-
-        const [
-          profilesRes,
-          xpRes,
-          progressRes,
-          lessonsRes,
-          attemptsRes,
-          quizzesRes,
-          reelsRes,
-          reelLikesRes,
-          reelCommentsRes,
-        ] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select(
-              "id, first_name, last_name, stream, is_admin"
-            ),
-
-          supabase
-            .from("xp_transactions")
-            .select("user_id, amount"),
-
-          supabase
-            .from("lesson_progress")
-            .select("user_id, lesson_id"),
-
-          supabase
-            .from("lessons")
-            .select("id", {
-              count: "exact",
-              head: true,
-            }),
-
-          supabase
-            .from("quiz_attempts")
-            .select(
-              "user_id, quiz_id, score, completed_at"
-            )
-            .not("completed_at", "is", null),
-
-          supabase
-            .from("quizzes")
-            .select("id, title"),
-
-          supabase
-            .from("reels")
-            .select(
-              "id, title, is_published, views_count"
-            ),
-
-          supabase
-            .from("reel_likes")
-            .select("reel_id"),
-
-          supabase
-            .from("reel_comments")
-            .select("reel_id"),
-        ]);
-
-        // ────────────────────────────────────────────────
-        // فحص الأخطاء
-        // ────────────────────────────────────────────────
-
-        const results = [
-          profilesRes,
-          xpRes,
-          progressRes,
-          lessonsRes,
-          attemptsRes,
-          quizzesRes,
-          reelsRes,
-          reelLikesRes,
-          reelCommentsRes,
-        ];
-
-        for (const result of results) {
-          if (result.error) {
-            throw result.error;
-          }
-        }
-
-        // ────────────────────────────────────────────────
-        // حفظ البيانات
-        // ────────────────────────────────────────────────
-
-        if (!mountedRef.current) {
-          return;
-        }
-
-        setData({
-          profiles:
-            (profilesRes.data ?? []) as Profile[],
-
-          xpRows:
-            (xpRes.data ?? []) as XPRow[],
-
-          lessonProgress:
-            (progressRes.data ??
-              []) as LessonProgress[],
-
-          quizAttempts:
-            (attemptsRes.data ??
-              []) as QuizAttempt[],
-
-          quizzes:
-            (quizzesRes.data ?? []) as Quiz[],
-
-          reels:
-            (reelsRes.data ?? []) as Reel[],
-
-          reelLikes:
-            (reelLikesRes.data ??
-              []) as ReelInteraction[],
-
-          reelComments:
-            (reelCommentsRes.data ??
-              []) as ReelInteraction[],
-
-          totalLessons: lessonsRes.count ?? 0,
-        });
-
-        setLastUpdated(new Date());
-      } catch (err) {
-        console.error("ADMIN STATS ERROR:", err);
-
-        if (!mountedRef.current) {
-          return;
-        }
-
-        const message =
-          err instanceof Error
-            ? err.message
-            : "حدث خطأ أثناء تحميل الإحصائيات.";
-
-        setError(message);
-      } finally {
-        loadingRef.current = false;
-
-        if (mountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    []
-  );
-
-  // ══════════════════════════════════════════════════════
-  // مراقبة تسجيل الدخول
-  // ══════════════════════════════════════════════════════
-
-  useEffect(() => {
-    mountedRef.current = true;
-
+  const loadStats = useCallback(async () => {
     const supabase = getSupabase();
 
     if (!supabase) {
-      setError(
-        "تعذر الاتصال بـ Supabase. تحقق من إعدادات البيئة."
-      );
+      setError("تعذر الاتصال بـ Supabase. تحقق من إعدادات البيئة.");
       setLoading(false);
-
-      return () => {
-        mountedRef.current = false;
-      };
-    }
-
-    let authReady = false;
-
-    // الاشتراك أولاً حتى لا نفقد حدث SIGNED_IN
-    const {
-      data: authListener,
-    } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        if (!mountedRef.current) {
-          return;
-        }
-
-        if (event === "SIGNED_IN" && session) {
-          authReady = true;
-
-          void loadStats();
-          return;
-        }
-
-        if (event === "TOKEN_REFRESHED" && session) {
-          return;
-        }
-
-        if (event === "SIGNED_OUT") {
-          setError(
-            "انتهت جلسة تسجيل الدخول. أعد تسجيل الدخول إلى حساب الأدمن."
-          );
-
-          setData(EMPTY_DATA);
-          setLoading(false);
-        }
-      }
-    );
-
-    // فحص الجلسة الحالية
-    void (async () => {
-      try {
-        const {
-          data: sessionData,
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        if (sessionError) {
-          throw sessionError;
-        }
-
-        if (sessionData.session) {
-          authReady = true;
-          await loadStats();
-        } else if (!authReady) {
-          setLoading(false);
-          setError(
-            "جلسة تسجيل الدخول غير موجودة. أعد تسجيل الدخول إلى حساب الأدمن."
-          );
-        }
-      } catch (err) {
-        console.error("ADMIN AUTH ERROR:", err);
-
-        if (mountedRef.current) {
-          setLoading(false);
-
-          setError(
-            err instanceof Error
-              ? err.message
-              : "تعذر التحقق من جلسة تسجيل الدخول."
-          );
-        }
-      }
-    })();
-
-    return () => {
-      mountedRef.current = false;
-      authListener.subscription.unsubscribe();
-    };
-  }, [loadStats]);
-
-  // ══════════════════════════════════════════════════════
-  // Live Realtime
-  // ══════════════════════════════════════════════════════
-
-  useEffect(() => {
-    const supabase = getSupabase();
-
-    if (!supabase) {
+      setRefreshing(false);
       return;
     }
 
-    const channel = supabase
-      .channel("admin-stats-live")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "profiles",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "xp_transactions",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "lesson_progress",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "lessons",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "quiz_attempts",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "quizzes",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "reels",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "reel_likes",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "reel_comments",
-        },
-        () => {
-          void loadStats({ silent: true });
-        }
-      )
-      .subscribe((status) => {
-        if (!mountedRef.current) {
-          return;
-        }
+    setRefreshing(true);
+    setError("");
+    setWarnings([]);
 
-        setIsRealtimeConnected(
-          status === "SUBSCRIBED"
-        );
+    try {
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) throw sessionError;
+
+      if (!sessionData.session) {
+        throw new Error("لازم تسجل الدخول بحساب الأدمن.");
+      }
+
+      const {
+        data: adminResult,
+        error: adminError,
+      } = await supabase.rpc("is_current_user_admin");
+
+      if (adminError) throw adminError;
+
+      if (adminResult !== true) {
+        throw new Error("ما عندكش صلاحية الدخول لإحصائيات الأدمن.");
+      }
+
+      const results = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, first_name, last_name, stream, is_admin"),
+
+        supabase
+          .from("xp_transactions")
+          .select("user_id, amount"),
+
+        supabase
+          .from("lesson_progress")
+          .select("user_id, lesson_id"),
+
+        supabase
+          .from("lessons")
+          .select("id", { count: "exact", head: true }),
+
+        supabase
+          .from("quiz_attempts")
+          .select("user_id, quiz_id, score, completed_at")
+          .not("completed_at", "is", null),
+
+        supabase
+          .from("quizzes")
+          .select("id, title"),
+
+        supabase
+          .from("reels")
+          .select("id, title, is_published, views_count"),
+
+        supabase
+          .from("reel_likes")
+          .select("reel_id"),
+
+        supabase
+          .from("reel_comments")
+          .select("reel_id"),
+      ]);
+
+      const labels = [
+        "الطلاب والشعب",
+        "نقاط XP",
+        "الدروس المكتملة",
+        "إجمالي الدروس",
+        "محاولات الاختبارات",
+        "قائمة الاختبارات",
+        "الريلزات",
+        "إعجابات الريلزات",
+        "تعليقات الريلزات",
+      ];
+
+      const failed: string[] = [];
+
+      results.forEach((result, index) => {
+        if (result.error) {
+          console.error(
+            `ADMIN STATS - ${labels[index]}:`,
+            result.error
+          );
+          failed.push(
+            `${labels[index]}: ${result.error.message}`
+          );
+        }
       });
 
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [loadStats]);
+console.log(
+  "PROFILES DEBUG:",
+  JSON.stringify(results[0], null, 2)
+);
+      const [
+        profilesRes,
+        xpRes,
+        progressRes,
+        lessonsRes,
+        attemptsRes,
+        quizzesRes,
+        reelsRes,
+        likesRes,
+        commentsRes,
+      ] = results;
 
-  // ══════════════════════════════════════════════════════
-  // Polling
-  //
-  // حتى إذا لم تكن Realtime مفعلة على الجداول،
-  // تبقى الإحصائيات تتحدث تلقائياً كل 5 ثوانٍ.
-  // ══════════════════════════════════════════════════════
+      setData({
+        profiles: (profilesRes.data ?? []) as Profile[],
+        xp: (xpRes.data ?? []) as XPRow[],
+        progress: (progressRes.data ?? []) as ProgressRow[],
+        totalLessons: lessonsRes.count ?? 0,
+        attempts: (attemptsRes.data ?? []) as Attempt[],
+        quizzes: (quizzesRes.data ?? []) as Quiz[],
+        reels: (reelsRes.data ?? []) as Reel[],
+        likes: (likesRes.data ?? []) as Interaction[],
+        comments: (commentsRes.data ?? []) as Interaction[],
+      });
+
+      setWarnings(failed);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("NEW ADMIN STATS ERROR:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "حدث خطأ أثناء تحميل الإحصائيات."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void loadStats({ silent: true });
-    }, 5000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
+    void loadStats();
   }, [loadStats]);
 
-  // ══════════════════════════════════════════════════════
-  // الإحصائيات الرئيسية
-  // ══════════════════════════════════════════════════════
-
   const stats = useMemo(() => {
-    const totalStudents = data.profiles.filter(
-      (profile) => !profile.is_admin
-    ).length;
+    const students = data.profiles.filter(
+      (profile) => profile.is_admin !== true
+    );
 
-    const totalAdmins = data.profiles.filter(
+    const admins = data.profiles.filter(
       (profile) => profile.is_admin === true
-    ).length;
+    );
 
-    const totalXP = data.xpRows.reduce(
-      (sum, row) => sum + (row.amount ?? 0),
+    const totalXP = data.xp.reduce(
+      (sum, row) => sum + (Number(row.amount) || 0),
       0
     );
 
-    const completedLessons =
-      data.lessonProgress.length;
+    const xpByStudent = new Map<string, number>();
 
-    const completedQuizzes =
-      data.quizAttempts.length;
+    for (const row of data.xp) {
+      xpByStudent.set(
+        row.user_id,
+        (xpByStudent.get(row.user_id) ?? 0) +
+          (Number(row.amount) || 0)
+      );
+    }
 
-    const averageQuizScore =
-      completedQuizzes > 0
-        ? Math.round(
-            data.quizAttempts.reduce(
-              (sum, attempt) =>
-                sum + (attempt.score ?? 0),
-              0
-            ) / completedQuizzes
-          )
-        : 0;
-
-    const uniqueActiveStudents =
-      new Set([
-        ...data.xpRows.map(
-          (row) => row.user_id
-        ),
-        ...data.lessonProgress.map(
-          (row) => row.user_id
-        ),
-        ...data.quizAttempts.map(
-          (row) => row.user_id
-        ),
-      ]).size;
-
-    const totalReels = data.reels.length;
-
-    const publishedReels =
-      data.reels.filter(
-        (reel) => reel.is_published
-      ).length;
-
-    const totalViews = data.reels.reduce(
-      (sum, reel) =>
-        sum + (reel.views_count ?? 0),
-      0
-    );
-
-    const totalLikes =
-      data.reelLikes.length;
-
-    const totalComments =
-      data.reelComments.length;
-
-    return {
-      totalStudents,
-      totalAdmins,
-      totalXP,
-      completedLessons,
-      completedQuizzes,
-      averageQuizScore,
-      uniqueActiveStudents,
-      totalReels,
-      publishedReels,
-      totalViews,
-      totalLikes,
-      totalComments,
-    };
-  }, [data]);
-
-  // ══════════════════════════════════════════════════════
-  // أفضل الطلاب
-  // ══════════════════════════════════════════════════════
-
-  const topStudents = useMemo(() => {
-    const xpMap: Record<string, number> = {};
-
-    data.xpRows.forEach((row) => {
-      xpMap[row.user_id] =
-        (xpMap[row.user_id] ?? 0) +
-        (row.amount ?? 0);
-    });
-
-    return data.profiles
-      .filter(
-        (profile) => !profile.is_admin
-      )
-      .map((profile) => ({
-        ...profile,
-        xp: xpMap[profile.id] ?? 0,
+    const topStudents = [...students]
+      .map((student) => ({
+        ...student,
+        xp: xpByStudent.get(student.id) ?? 0,
       }))
       .sort((a, b) => b.xp - a.xp)
       .slice(0, 5);
-  }, [data.profiles, data.xpRows]);
 
-  // ══════════════════════════════════════════════════════
-  // توزيع الطلاب حسب الشعبة
-  // ══════════════════════════════════════════════════════
+    const streamMap = new Map<string, number>();
 
-  const streamStats = useMemo(() => {
-    const map: Record<string, number> = {};
+    for (const student of students) {
+      const stream = student.stream?.trim() || "غير محددة";
 
-    data.profiles
-      .filter(
-        (profile) => !profile.is_admin
-      )
-      .forEach((profile) => {
-        const stream =
-          profile.stream?.trim() ||
-          "غير محددة";
+      streamMap.set(
+        stream,
+        (streamMap.get(stream) ?? 0) + 1
+      );
+    }
 
-        map[stream] =
-          (map[stream] ?? 0) + 1;
-      });
+    const streams = [...streamMap.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
 
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6);
-  }, [data.profiles]);
-
-  // ══════════════════════════════════════════════════════
-  // إحصائيات الاختبارات
-  // ══════════════════════════════════════════════════════
-
-  const quizStats = useMemo(() => {
-    const map: Record<
+    const quizMap = new Map<
       string,
-      {
-        attempts: number;
-        totalScore: number;
+      { attempts: number; scoreTotal: number; scoreCount: number }
+    >();
+
+    for (const attempt of data.attempts) {
+      if (!attempt.quiz_id) continue;
+
+      const current = quizMap.get(attempt.quiz_id) ?? {
+        attempts: 0,
+        scoreTotal: 0,
+        scoreCount: 0,
+      };
+
+      current.attempts += 1;
+
+      if (attempt.score !== null && Number.isFinite(Number(attempt.score))) {
+        current.scoreTotal += Number(attempt.score);
+        current.scoreCount += 1;
       }
-    > = {};
 
-    data.quizAttempts.forEach((attempt) => {
-      if (!map[attempt.quiz_id]) {
-        map[attempt.quiz_id] = {
-          attempts: 0,
-          totalScore: 0,
-        };
-      }
+      quizMap.set(attempt.quiz_id, current);
+    }
 
-      map[attempt.quiz_id].attempts += 1;
-
-      map[attempt.quiz_id].totalScore +=
-        attempt.score ?? 0;
-    });
-
-    return Object.entries(map)
-      .map(([quizId, quizData]) => {
-        const quiz = data.quizzes.find(
-          (item) => item.id === quizId
-        );
+    const quizStats = data.quizzes
+      .map((quiz) => {
+        const result = quizMap.get(quiz.id);
 
         return {
-          id: quizId,
-          title:
-            quiz?.title ??
-            "اختبار غير معروف",
-          attempts: quizData.attempts,
+          id: quiz.id,
+          title: quiz.title,
+          attempts: result?.attempts ?? 0,
           average:
-            quizData.attempts > 0
-              ? Math.round(
-                  quizData.totalScore /
-                    quizData.attempts
-                )
-              : 0,
+            result && result.scoreCount > 0
+              ? result.scoreTotal / result.scoreCount
+              : null,
         };
       })
-      .sort(
-        (a, b) =>
-          b.attempts - a.attempts
-      )
-      .slice(0, 5);
-  }, [data.quizAttempts, data.quizzes]);
+      .sort((a, b) => b.attempts - a.attempts);
 
-  // ══════════════════════════════════════════════════════
-  // إحصائيات الريلز
-  // ══════════════════════════════════════════════════════
+    const likesByReel = new Map<string, number>();
+    const commentsByReel = new Map<string, number>();
 
-  const reelStats = useMemo(() => {
-    const likesMap: Record<string, number> = {};
-    const commentsMap: Record<string, number> = {};
+    for (const like of data.likes) {
+      likesByReel.set(
+        like.reel_id,
+        (likesByReel.get(like.reel_id) ?? 0) + 1
+      );
+    }
 
-    data.reelLikes.forEach((like) => {
-      likesMap[like.reel_id] =
-        (likesMap[like.reel_id] ?? 0) + 1;
-    });
+    for (const comment of data.comments) {
+      commentsByReel.set(
+        comment.reel_id,
+        (commentsByReel.get(comment.reel_id) ?? 0) + 1
+      );
+    }
 
-    data.reelComments.forEach((comment) => {
-      commentsMap[comment.reel_id] =
-        (commentsMap[comment.reel_id] ?? 0) + 1;
-    });
+    const reelStats = data.reels.map((reel) => ({
+      ...reel,
+      views: Number(reel.views_count) || 0,
+      likes: likesByReel.get(reel.id) ?? 0,
+      comments: commentsByReel.get(reel.id) ?? 0,
+    }));
 
-    const reelsWithStats = data.reels.map(
-      (reel) => ({
-        ...reel,
-        likes:
-          likesMap[reel.id] ?? 0,
-        comments:
-          commentsMap[reel.id] ?? 0,
-      })
+    const totalViews = reelStats.reduce(
+      (sum, reel) => sum + reel.views,
+      0
     );
 
-    const mostViewed =
-      [...reelsWithStats].sort(
-        (a, b) =>
-          (b.views_count ?? 0) -
-          (a.views_count ?? 0)
-      )[0] ?? null;
+    const mostViewed = [...reelStats].sort(
+      (a, b) => b.views - a.views
+    )[0];
 
-    const mostLiked =
-      [...reelsWithStats].sort(
-        (a, b) =>
-          b.likes - a.likes
-      )[0] ?? null;
+    const mostLiked = [...reelStats].sort(
+      (a, b) => b.likes - a.likes
+    )[0];
 
-    const mostCommented =
-      [...reelsWithStats].sort(
-        (a, b) =>
-          b.comments - a.comments
-      )[0] ?? null;
+    const mostCommented = [...reelStats].sort(
+      (a, b) => b.comments - a.comments
+    )[0];
+
+    const activeStudents = new Set([
+      ...data.xp.map((row) => row.user_id),
+      ...data.progress.map((row) => row.user_id),
+      ...data.attempts.map((row) => row.user_id),
+    ]);
 
     return {
+      students,
+      admins,
+      totalXP,
+      topStudents,
+      streams,
+      quizStats,
+      mostActiveQuiz: quizStats[0],
+      totalViews,
+      reelStats,
+      totalLikes: data.likes.length,
+      totalComments: data.comments.length,
+      publishedReels: data.reels.filter(
+        (reel) => reel.is_published
+      ).length,
       mostViewed,
       mostLiked,
       mostCommented,
+      activeStudents: activeStudents.size,
     };
-  }, [
-    data.reels,
-    data.reelLikes,
-    data.reelComments,
-  ]);
-
-  // ══════════════════════════════════════════════════════
-  // Loading
-  // ══════════════════════════════════════════════════════
+  }, [data]);
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
-        <div className="mx-auto max-w-7xl">
-          <div className="h-10 w-56 animate-pulse rounded-lg bg-white/10" />
-
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[1, 2, 3, 4].map((item) => (
+      <main
+        dir="rtl"
+        className="min-h-screen bg-[#07111f] p-5 text-white md:p-8"
+      >
+        <div className="mx-auto max-w-7xl animate-pulse space-y-6">
+          <div className="h-28 rounded-2xl bg-slate-800" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, index) => (
               <div
-                key={item}
-                className="h-32 animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
+                key={index}
+                className="h-32 rounded-2xl bg-slate-800"
               />
             ))}
           </div>
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            {[1, 2].map((item) => (
-              <div
-                key={item}
-                className="h-80 animate-pulse rounded-2xl border border-white/5 bg-white/[0.03]"
-              />
-            ))}
-          </div>
+          <div className="h-72 rounded-2xl bg-slate-800" />
         </div>
       </main>
     );
   }
 
-  // ══════════════════════════════════════════════════════
-  // Error
-  // ══════════════════════════════════════════════════════
-
   if (error) {
     return (
-      <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
-        <div className="mx-auto max-w-3xl">
-          <Link
-            href="/admin"
-            className="text-sm text-slate-400 transition hover:text-white"
+      <main
+        dir="rtl"
+        className="min-h-screen bg-[#07111f] p-5 text-white md:p-8"
+      >
+        <div className="mx-auto max-w-3xl rounded-2xl border border-red-400/20 bg-red-950/30 p-6">
+          <h1 className="text-xl font-bold text-red-300">
+            تعذر تحميل الإحصائيات
+          </h1>
+          <p className="mt-3 text-sm leading-7 text-slate-300">
+            {error}
+          </p>
+          <button
+            onClick={() => void loadStats()}
+            className="mt-5 rounded-xl bg-cyan-500 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-400"
           >
-            ← العودة إلى لوحة الإدارة
-          </Link>
-
-          <div className="mt-8 rounded-2xl border border-red-400/20 bg-red-500/10 p-6">
-            <div className="text-3xl">
-              ⚠️
-            </div>
-
-            <h1 className="mt-3 text-xl font-semibold text-red-300">
-              تعذر تحميل الإحصائيات
-            </h1>
-
-            <p className="mt-2 text-sm text-red-200/80">
-              {error}
-            </p>
-
-            <button
-              type="button"
-              onClick={() =>
-                void loadStats()
-              }
-              className="mt-5 rounded-xl bg-red-500/20 px-4 py-2 text-sm text-red-200 transition hover:bg-red-500/30"
-            >
-              المحاولة مرة أخرى
-            </button>
-
+            إعادة المحاولة
+          </button>
+          <div className="mt-4">
             <Link
-              href="/login"
-              className="mt-3 block text-sm text-slate-400 underline hover:text-white"
+              href="/admin"
+              className="text-sm text-cyan-300 hover:underline"
             >
-              الذهاب إلى تسجيل الدخول
+              الرجوع إلى لوحة الإدارة
             </Link>
           </div>
         </div>
@@ -887,529 +530,367 @@ export default function AdminStatsPage() {
     );
   }
 
-  // ══════════════════════════════════════════════════════
-  // الصفحة
-  // ══════════════════════════════════════════════════════
+  const maxStreamCount = Math.max(
+    1,
+    ...stats.streams.map((stream) => stream.count)
+  );
 
   return (
-    <main className="min-h-screen bg-slate-950 px-4 py-8 text-white">
-      <div className="mx-auto max-w-7xl">
+    <main
+      dir="rtl"
+      className="min-h-screen bg-[#07111f] px-4 py-6 text-white sm:px-6 lg:px-8"
+    >
+      <div className="mx-auto max-w-7xl space-y-7">
+        <header className="relative overflow-hidden rounded-3xl border border-cyan-400/20 bg-gradient-to-l from-cyan-950 via-slate-900 to-[#10172b] p-6 sm:p-8">
+          <div className="pointer-events-none absolute -left-12 -top-20 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
 
-        {/* Header */}
-        <div className="mb-8">
-          <Link
-            href="/admin"
-            className="mb-5 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
-          >
-            ← العودة إلى لوحة الإدارة
-          </Link>
-
-          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div className="relative flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
             <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-300">
-                <span
-                  className={
-                    isRealtimeConnected
-                      ? "h-2 w-2 rounded-full bg-emerald-400"
-                      : "h-2 w-2 rounded-full bg-amber-400"
-                  }
-                />
-
-                {isRealtimeConnected
-                  ? "LIVE ANALYTICS"
-                  : "ANALYTICS"}
-              </div>
-
-              <h1 className="text-3xl font-bold md:text-4xl">
-                إحصائيات الأكاديمية
-              </h1>
-
-              <p className="mt-2 text-sm text-slate-500">
-                البيانات مأخوذة مباشرة من قاعدة بيانات MARIS ACADEMY.
+              <p className="text-xs font-bold tracking-[0.2em] text-cyan-300">
+                MARIS ACADEMY 2027
               </p>
-
-              {lastUpdated && (
-                <p className="mt-2 text-xs text-slate-600">
-                  آخر تحديث:{" "}
-                  {lastUpdated.toLocaleTimeString(
-                    "ar-DZ"
-                  )}
-                  {" · "}
-                  تحديث تلقائي كل 5 ثوانٍ
-                </p>
-              )}
+              <h1 className="mt-3 text-3xl font-black sm:text-4xl">
+                مركز الإحصائيات
+              </h1>
+              <p className="mt-3 max-w-xl text-sm leading-7 text-slate-300">
+                نظرة شاملة على الطلاب والتعلّم والاختبارات ومحتوى المنصة.
+              </p>
+              <p className="mt-3 text-xs text-slate-400">
+                {lastUpdated
+                  ? `آخر تحديث: ${lastUpdated.toLocaleTimeString("ar-DZ")}`
+                  : "في انتظار البيانات"}
+              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                void loadStats()
-              }
-              disabled={refreshing}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {refreshing
-                ? "جارٍ التحديث…"
-                : "↻ تحديث البيانات"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => void loadStats()}
+                disabled={refreshing}
+                className="rounded-xl border border-cyan-300/20 bg-cyan-400/10 px-5 py-3 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/20 disabled:opacity-50"
+              >
+                {refreshing ? "جاري التحديث..." : "↻ تحديث البيانات"}
+              </button>
+
+              <Link
+                href="/admin"
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-bold text-white transition hover:bg-white/10"
+              >
+                لوحة الإدارة
+              </Link>
+            </div>
           </div>
-        </div>
+        </header>
 
-        {/* Main Stats */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard
-            icon="👥"
-            label="الطلاب"
-            value={stats.totalStudents}
-            description={`${stats.totalAdmins} مشرف`}
-          />
-
-          <StatCard
-            icon="⚡"
-            label="إجمالي XP"
-            value={stats.totalXP}
-            description={`${stats.uniqueActiveStudents} طالب نشط`}
-          />
-
-          <StatCard
-            icon="📚"
-            label="الدروس المكتملة"
-            value={stats.completedLessons}
-            description={`${data.totalLessons} درس متاح`}
-          />
-
-          <StatCard
-            icon="📝"
-            label="الاختبارات"
-            value={stats.completedQuizzes}
-            description={`متوسط النتائج ${stats.averageQuizScore}%`}
-          />
-        </div>
-
-        {/* Reels Stats */}
-        <section className="mt-6">
-          <div className="mb-4">
-            <p className="text-xs text-cyan-300">
-              REELS ANALYTICS
-            </p>
-
-            <h2 className="mt-1 text-xl font-semibold">
-              🎬 إحصائيات الريلزات
+        {warnings.length > 0 && (
+          <section className="rounded-2xl border border-amber-400/30 bg-amber-950/20 p-5">
+            <h2 className="font-bold text-amber-200">
+              بعض البيانات لم يتم تحميلها
             </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              الإحصائيات التالية قد تكون غير مكتملة. تفاصيل المشكلة:
+            </p>
+            <ul className="mt-3 space-y-2 text-sm text-amber-100">
+              {warnings.map((warning, index) => (
+                <li key={`${index}-${warning}`} className="break-words">
+                  • {warning}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section>
+          <div className="mb-4">
+            <h2 className="text-xl font-bold">نظرة عامة</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              أرقام المنصة من قاعدة البيانات
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              icon="🎬"
-              label="إجمالي الريلز"
-              value={stats.totalReels}
-              description={`${stats.publishedReels} منشور`}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="إجمالي الطلاب"
+              value={stats.students.length}
+              description="الحسابات غير الإدارية"
+              icon="🎓"
+              accent="cyan"
             />
-
-            <StatCard
-              icon="👁️"
-              label="المشاهدات"
-              value={stats.totalViews}
-              description="إجمالي المشاهدات"
+            <MetricCard
+              title="الإداريون"
+              value={stats.admins.length}
+              description="حسابات الإدارة"
+              icon="🛡️"
+              accent="violet"
             />
-
-            <StatCard
-              icon="❤️"
-              label="الإعجابات"
-              value={stats.totalLikes}
-              description="إجمالي الإعجابات"
+            <MetricCard
+              title="مجموع XP"
+              value={stats.totalXP}
+              description="مجموع سجلات نقاط الخبرة"
+              icon="⚡"
+              accent="amber"
             />
-
-            <StatCard
-              icon="💬"
-              label="التعليقات"
-              value={stats.totalComments}
-              description="إجمالي التعليقات"
+            <MetricCard
+              title="الطلاب النشطون"
+              value={stats.activeStudents}
+              description="طلاب لديهم نشاط مسجل"
+              icon="📈"
+              accent="emerald"
+            />
+            <MetricCard
+              title="الدروس المكتملة"
+              value={data.progress.length}
+              description={`من أصل ${numberFormat(data.totalLessons)} درس`}
+              icon="📚"
+              accent="emerald"
+            />
+            <MetricCard
+              title="الاختبارات"
+              value={data.quizzes.length}
+              description="إجمالي الاختبارات المسجلة"
+              icon="📝"
+              accent="violet"
+            />
+            <MetricCard
+              title="المحاولات المكتملة"
+              value={data.attempts.length}
+              description="محاولات لها تاريخ إكمال"
+              icon="✅"
+              accent="cyan"
+            />
+            <MetricCard
+              title="متوسط العلامات"
+              value={
+                data.attempts.length
+                  ? Math.round(
+                      data.attempts.reduce(
+                        (sum, attempt) =>
+                          sum + (Number(attempt.score) || 0),
+                        0
+                      ) / data.attempts.length
+                    )
+                  : 0
+              }
+              description="متوسط القيم المسجلة في score"
+              icon="🎯"
+              accent="amber"
             />
           </div>
         </section>
 
-        {/* Reel Highlights */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          <ReelHighlight
-            icon="👁️"
-            label="الأكثر مشاهدة"
-            reel={reelStats.mostViewed}
-            value={
-              reelStats.mostViewed
-                ? `${reelStats.mostViewed.views_count ?? 0} مشاهدة`
-                : "لا توجد بيانات"
-            }
-          />
-
-          <ReelHighlight
-            icon="❤️"
-            label="الأكثر إعجابًا"
-            reel={reelStats.mostLiked}
-            value={
-              reelStats.mostLiked
-                ? `${reelStats.mostLiked.likes} إعجاب`
-                : "لا توجد بيانات"
-            }
-          />
-
-          <ReelHighlight
-            icon="💬"
-            label="الأكثر تعليقًا"
-            reel={reelStats.mostCommented}
-            value={
-              reelStats.mostCommented
-                ? `${reelStats.mostCommented.comments} تعليق`
-                : "لا توجد بيانات"
-            }
-          />
-        </div>
-
-        {/* Learning Overview */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-
-          {/* Streams */}
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <div className="mb-6">
-              <p className="text-xs text-cyan-300">
-                STUDENTS
-              </p>
-
-              <h2 className="mt-1 text-xl font-semibold">
-                توزيع الطلاب حسب الشعبة
-              </h2>
-            </div>
-
-            {streamStats.length === 0 ? (
-              <EmptyState text="لا توجد بيانات عن الشعب." />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Panel
+            title="توزيع الطلاب حسب الشعبة"
+            subtitle="عدد الطلاب المسجلين في كل شعبة"
+          >
+            {stats.streams.length === 0 ? (
+              <EmptyMessage text="ما كاين حتى بيانات للشعب، أو تعذر تحميلها." />
             ) : (
-              <div className="space-y-4">
-                {streamStats.map(
-                  ([stream, count]) => {
-                    const percentage =
-                      stats.totalStudents > 0
-                        ? Math.round(
-                            (count /
-                              stats.totalStudents) *
-                              100
-                          )
-                        : 0;
-
-                    return (
-                      <div key={stream}>
-                        <div className="mb-2 flex items-center justify-between gap-4">
-                          <span className="truncate text-sm text-slate-300">
-                            {stream}
-                          </span>
-
-                          <span className="shrink-0 text-sm font-semibold text-cyan-300">
-                            {count}
-                          </span>
-                        </div>
-
-                        <div className="h-2 overflow-hidden rounded-full bg-white/5">
-                          <div
-                            className="h-full rounded-full bg-cyan-400 transition-all"
-                            style={{
-                              width: `${percentage}%`,
-                            }}
-                          />
-                        </div>
-
-                        <div className="mt-1 text-right text-[11px] text-slate-600">
-                          {percentage}%
-                        </div>
-                      </div>
-                    );
-                  }
-                )}
+              <div className="space-y-5">
+                {stats.streams.map((stream) => (
+                  <div key={stream.name}>
+                    <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                      <span className="font-medium text-slate-200">
+                        {stream.name}
+                      </span>
+                      <span className="font-bold text-cyan-200">
+                        {numberFormat(stream.count)} طالب
+                      </span>
+                    </div>
+                    <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-l from-cyan-400 to-blue-500 transition-all"
+                        style={{
+                          width: `${(stream.count / maxStreamCount) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-          </section>
+          </Panel>
 
-          {/* Top Students */}
-          <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <div className="mb-6">
-              <p className="text-xs text-amber-300">
-                TOP STUDENTS
-              </p>
-
-              <h2 className="mt-1 text-xl font-semibold">
-                أفضل الطلاب حسب XP
-              </h2>
-            </div>
-
-            {topStudents.length === 0 ? (
-              <EmptyState text="لا توجد بيانات XP بعد." />
+          <Panel
+            title="أفضل الطلاب حسب XP"
+            subtitle="الترتيب حسب مجموع نقاط الخبرة المسجلة"
+          >
+            {stats.topStudents.length === 0 ? (
+              <EmptyMessage text="لا توجد بيانات طلاب لعرض الترتيب." />
             ) : (
               <div className="space-y-3">
-                {topStudents.map(
-                  (student, index) => (
-                    <Link
-                      key={student.id}
-                      href={`/admin/students/${student.id}`}
-                      className="flex items-center gap-4 rounded-xl bg-white/[0.03] p-4 transition hover:bg-white/[0.06]"
-                    >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/5 font-bold text-slate-300">
-                        {index + 1}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-white">
-                          {getFullName(student)}
-                        </div>
-
-                        <div className="mt-1 text-xs text-slate-600">
-                          {student.stream ??
-                            "الشعبة غير محددة"}
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 font-bold text-amber-300">
-                        ⚡ {student.xp}
-                      </div>
-                    </Link>
-                  )
-                )}
+                {stats.topStudents.map((student, index) => (
+                  <Link
+                    key={student.id}
+                    href={`/admin/students/${student.id}`}
+                    className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] p-3 transition hover:border-cyan-400/30 hover:bg-cyan-400/5"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 font-black text-cyan-200">
+                      {index + 1}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-bold text-white">
+                        {shortName(student)}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-slate-400">
+                        {student.stream || "الشعبة غير محددة"}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-left">
+                      <p className="font-black text-amber-300">
+                        {numberFormat(student.xp)}
+                      </p>
+                      <p className="text-xs text-slate-500">XP</p>
+                    </div>
+                  </Link>
+                ))}
               </div>
             )}
-          </section>
+          </Panel>
         </div>
 
-        {/* Quiz Stats */}
-        <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-          <div className="mb-6">
-            <p className="text-xs text-purple-300">
-              QUIZZES
-            </p>
-
-            <h2 className="mt-1 text-xl font-semibold">
-              أكثر الاختبارات نشاطًا
-            </h2>
-          </div>
-
-          {quizStats.length === 0 ? (
-            <EmptyState text="لم يتم إجراء أي اختبار بعد." />
+        <Panel
+          title="نشاط الاختبارات"
+          subtitle="الاختبار الأكثر نشاطًا حسب عدد المحاولات المكتملة"
+        >
+          {!stats.mostActiveQuiz ||
+          stats.mostActiveQuiz.attempts === 0 ? (
+            <EmptyMessage text="ما كاينش محاولات مكتملة للاختبارات في البيانات المحمّلة." />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-white/5">
-              <div className="hidden grid-cols-[2fr_1fr_1fr] border-b border-white/5 bg-white/[0.03] px-5 py-3 text-xs text-slate-500 sm:grid">
-                <div>الاختبار</div>
-                <div>المحاولات</div>
-                <div>المتوسط</div>
-              </div>
-
-              <div className="divide-y divide-white/5">
-                {quizStats.map(
-                  (quiz) => (
-                    <div
-                      key={quiz.id}
-                      className="grid gap-2 px-5 py-4 sm:grid-cols-[2fr_1fr_1fr] sm:items-center"
-                    >
-                      <div className="font-medium text-white">
-                        {quiz.title}
-                      </div>
-
-                      <div className="text-sm text-slate-400">
-                        {quiz.attempts} محاولة
-                      </div>
-
-                      <div className="font-semibold text-cyan-300">
-                        {quiz.average}%
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
+            <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-l from-violet-500/10 to-slate-900 p-5">
+              <p className="text-sm text-violet-200">
+                🏆 الاختبار الأكثر نشاطًا
+              </p>
+              <h3 className="mt-3 text-xl font-black">
+                {stats.mostActiveQuiz.title}
+              </h3>
+              <p className="mt-3 text-3xl font-black text-violet-200">
+                {numberFormat(stats.mostActiveQuiz.attempts)}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                محاولة مكتملة
+              </p>
             </div>
           )}
-        </section>
 
-        {/* Quick Summary */}
-        <section className="mt-6 rounded-2xl border border-cyan-400/10 bg-cyan-400/[0.03] p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs text-cyan-300">
-                MARIS ACADEMY
-              </p>
-
-              <h2 className="mt-1 text-lg font-semibold">
-                ملخص النشاط
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-500">
-                هذه الإحصائيات مبنية مباشرة على البيانات الحقيقية الموجودة في Supabase.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <MiniStat
-                label="الطلاب"
-                value={stats.totalStudents}
-              />
-
-              <MiniStat
-                label="المشرفون"
-                value={stats.totalAdmins}
-              />
-
-              <MiniStat
-                label="XP"
-                value={stats.totalXP}
-              />
-            </div>
+          <div className="mt-5 space-y-3">
+            {stats.quizStats.slice(0, 5).map((quiz, index) => (
+              <div
+                key={quiz.id}
+                className="flex items-center gap-3 rounded-xl bg-white/[0.03] p-3"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-sm font-bold text-slate-300">
+                  {index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {quiz.title}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {quiz.average === null
+                      ? "لا توجد علامة مسجلة"
+                      : `متوسط العلامات المسجلة: ${quiz.average.toFixed(1)}`}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-bold text-cyan-200">
+                  {numberFormat(quiz.attempts)} محاولة
+                </span>
+              </div>
+            ))}
           </div>
-        </section>
+        </Panel>
+
+        <Panel
+          title="إحصائيات الريلزات"
+          subtitle="إحصائيات مستقلة مبنية على بيانات الريلزات الحالية"
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="إجمالي الريلزات"
+              value={data.reels.length}
+              description="كل الريلزات"
+              icon="🎬"
+              accent="cyan"
+            />
+            <MetricCard
+              title="الريلزات المنشورة"
+              value={stats.publishedReels}
+              description="الريلزات المفعّلة للنشر"
+              icon="📡"
+              accent="emerald"
+            />
+            <MetricCard
+              title="المشاهدات"
+              value={stats.totalViews}
+              description="مجموع views_count"
+              icon="👁️"
+              accent="violet"
+            />
+            <MetricCard
+              title="الإعجابات والتعليقات"
+              value={stats.totalLikes + stats.totalComments}
+              description={`${numberFormat(stats.totalLikes)} إعجاب · ${numberFormat(stats.totalComments)} تعليق`}
+              icon="💬"
+              accent="amber"
+            />
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+            {[
+              {
+                title: "الأكثر مشاهدة",
+                reel: stats.mostViewed,
+                metric: "مشاهدة",
+                value: stats.mostViewed?.views ?? 0,
+                icon: "👁️",
+              },
+              {
+                title: "الأكثر إعجابًا",
+                reel: stats.mostLiked,
+                metric: "إعجاب",
+                value: stats.mostLiked?.likes ?? 0,
+                icon: "❤️",
+              },
+              {
+                title: "الأكثر تعليقًا",
+                reel: stats.mostCommented,
+                metric: "تعليق",
+                value: stats.mostCommented?.comments ?? 0,
+                icon: "💬",
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                className="rounded-2xl border border-white/10 bg-slate-950/50 p-4"
+              >
+                <p className="text-sm text-slate-400">
+                  {item.icon} {item.title}
+                </p>
+                {item.reel ? (
+                  <>
+                    <p className="mt-3 line-clamp-2 font-bold text-white">
+                      {item.reel.title}
+                    </p>
+                    <p className="mt-3 text-2xl font-black text-cyan-200">
+                      {numberFormat(item.value)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.metric}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-4 text-sm text-slate-500">
+                    لا توجد ريلزات مسجلة.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <footer className="pb-4 text-center text-xs text-slate-500">
+          MARIS ACADEMY ²⁰²⁷ · لوحة الإحصائيات
+        </footer>
       </div>
     </main>
-  );
-}
-
-// ══════════════════════════════════════════════════════
-// Components
-// ══════════════════════════════════════════════════════
-
-function getFullName(profile: Profile) {
-  const name =
-    `${profile.first_name ?? ""} ${
-      profile.last_name ?? ""
-    }`.trim();
-
-  return name || "طالب بدون اسم";
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-  description,
-}: {
-  icon: string;
-  label: string;
-  value: string | number;
-  description: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex items-center justify-between">
-        <span className="text-2xl">
-          {icon}
-        </span>
-
-        <span className="text-xs text-slate-600">
-          MARIS
-        </span>
-      </div>
-
-      <div className="mt-4">
-        <div className="text-2xl font-bold text-white">
-          {value}
-        </div>
-
-        <div className="mt-1 text-sm font-medium text-slate-300">
-          {label}
-        </div>
-
-        <div className="mt-1 text-xs text-slate-600">
-          {description}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.03] px-4 py-3 text-center">
-      <div className="text-lg font-bold text-white">
-        {value}
-      </div>
-
-      <div className="mt-1 text-[11px] text-slate-600">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function ReelHighlight({
-  icon,
-  label,
-  reel,
-  value,
-}: {
-  icon: string;
-  label: string;
-  reel:
-    | (Reel & {
-        likes: number;
-        comments: number;
-      })
-    | null;
-  value: string;
-}) {
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-xl">
-          {icon}
-        </div>
-
-        <div>
-          <p className="text-xs text-slate-500">
-            REELS
-          </p>
-
-          <h2 className="font-semibold">
-            {label}
-          </h2>
-        </div>
-      </div>
-
-      {reel ? (
-        <div className="mt-6">
-          <h3 className="line-clamp-2 font-medium text-white">
-            {reel.title}
-          </h3>
-
-          <p className="mt-2 text-lg font-bold text-cyan-300">
-            {value}
-          </p>
-
-          <p className="mt-2 text-xs text-slate-600">
-            {reel.is_published
-              ? "🟢 منشور"
-              : "⚫ مخفي"}
-          </p>
-        </div>
-      ) : (
-        <div className="mt-6 text-sm text-slate-600">
-          لا توجد بيانات بعد.
-        </div>
-      )}
-    </section>
-  );
-}
-
-function EmptyState({
-  text,
-}: {
-  text: string;
-}) {
-  return (
-    <div className="rounded-xl bg-white/[0.03] px-5 py-10 text-center">
-      <div className="text-3xl">
-        📭
-      </div>
-
-      <p className="mt-3 text-sm text-slate-500">
-        {text}
-      </p>
-    </div>
   );
 }

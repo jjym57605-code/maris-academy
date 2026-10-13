@@ -8,6 +8,7 @@ export interface Reel {
   video_url: string;
   thumbnail_url: string | null;
   subject_id: string | null;
+  target_stream: string | null;
   is_published: boolean;
   views_count: number;
   created_at: string;

@@ -84,7 +84,8 @@ type Review = {
 };
 
 function renderStars(rating: number) {
-  return "★".repeat(rating) + "☆".repeat(5 - rating);
+  const safeRating = Math.max(0, Math.min(5, Math.round(rating)));
+  return "★".repeat(safeRating) + "☆".repeat(5 - safeRating);
 }
 
 function formatDate(date: string) {
@@ -113,8 +114,7 @@ export default function LandingPage() {
           .from("platform_reviews")
           .select("id, rating, review, created_at")
           .eq("status", "approved")
-          .order("created_at", { ascending: false })
-          .limit(6);
+          .order("created_at", { ascending: false });
 
         if (error) {
           console.error("Error loading reviews:", error);
@@ -133,6 +133,67 @@ export default function LandingPage() {
 
     loadReviews();
   }, []);
+
+  // كل تقييم ينتمي إلى سطر واحد فقط
+  const firstReviewRow = reviews.filter((_, index) => index % 2 === 0);
+  const secondReviewRow = reviews.filter((_, index) => index % 2 !== 0);
+
+  function renderReviewRow(
+    items: Review[],
+    direction: "left" | "right",
+    rowLabel: string
+  ) {
+    if (items.length === 0) return null;
+
+    return (
+      <div
+        className="maris-reviews-marquee"
+        dir="ltr"
+        role="region"
+        aria-label={rowLabel}
+      >
+        <div
+          className={`maris-reviews-track ${
+            direction === "left"
+              ? "maris-reviews-track-left"
+              : "maris-reviews-track-right"
+          }`}
+        >
+          <div className="maris-reviews-group">
+            {items.map((item) => (
+              <article
+                key={item.id}
+                dir="rtl"
+                className="glass-card glass-card-hover relative flex min-h-[230px] w-[280px] shrink-0 flex-col overflow-hidden p-5 sm:w-[320px] sm:p-6"
+              >
+                <div
+                  className="text-lg tracking-widest text-yellow-300"
+                  dir="ltr"
+                  aria-label={`${item.rating} من 5`}
+                >
+                  {renderStars(item.rating)}
+                </div>
+
+                <p className="mt-5 flex-1 whitespace-normal break-words leading-7 text-foam/70">
+                  “{item.review}”
+                </p>
+
+                <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/5 pt-4">
+                  <span className="text-xs font-bold text-cyan-300/70">
+                    طالب من MARIS 💙
+                  </span>
+
+                  <span className="shrink-0 text-[11px] text-foam/30">
+                    {formatDate(item.created_at)}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -182,7 +243,9 @@ export default function LandingPage() {
           >
             منصة بكالوريا 2027
             <br />
-            <span className="text-gradient">ذاكر بذكاء، وتقدّم بثبات.</span>
+            <span className="text-gradient">
+              ذاكر بذكاء، وتقدّم بثبات.
+            </span>
           </h1>
 
           <p
@@ -297,11 +360,13 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ═══ آراء الطلبة ═══ */}
+        {/* ═══ آراء الطلبة المتحركة ═══ */}
         {!reviewsLoading && reviews.length > 0 && (
-          <section className="relative z-10 mx-auto max-w-6xl px-4 pb-24 sm:px-6">
-            <div className="mb-8 text-center">
-              <div className="text-3xl">⭐</div>
+          <section className="relative z-10 pb-24">
+            <div className="mx-auto mb-8 max-w-6xl px-4 text-center sm:px-6">
+              <div className="text-3xl" aria-hidden>
+                ⭐
+              </div>
 
               <h2 className="mt-3 text-2xl font-extrabold text-white sm:text-3xl">
                 ماذا يقول طلبتنا؟
@@ -312,39 +377,21 @@ export default function LandingPage() {
               </p>
             </div>
 
-            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {reviews.map((item, index) => (
-                <article
-                  key={item.id}
-                  className="glass-card glass-card-hover animate-fade-up relative overflow-hidden p-6"
-                  style={{ animationDelay: `${index * 70}ms` }}
-                >
-                  <div
-                    className="text-lg tracking-widest text-yellow-300"
-                    dir="ltr"
-                    aria-label={`${item.rating} من 5`}
-                  >
-                    {renderStars(item.rating)}
-                  </div>
+            <div className="flex flex-col gap-5">
+              {renderReviewRow(
+                firstReviewRow,
+                "left",
+                "آراء الطلبة — الصف الأول"
+              )}
 
-                  <p className="mt-5 min-h-[84px] leading-7 text-foam/70">
-                    “{item.review}”
-                  </p>
-
-                  <div className="mt-5 flex items-center justify-between border-t border-white/5 pt-4">
-                    <span className="text-xs font-bold text-cyan-300/70">
-                      طالب من MARIS 💙
-                    </span>
-
-                    <span className="text-[11px] text-foam/30">
-                      {formatDate(item.created_at)}
-                    </span>
-                  </div>
-                </article>
-              ))}
+              {renderReviewRow(
+                secondReviewRow,
+                "right",
+                "آراء الطلبة — الصف الثاني"
+              )}
             </div>
 
-            <div className="mt-8 text-center">
+            <div className="mt-8 px-4 text-center">
               <Link
                 href="/about"
                 className="btn-secondary inline-flex"
@@ -395,8 +442,68 @@ export default function LandingPage() {
           </p>
         </footer>
       </main>
+
+      {/* ═══ حركة آراء الطلبة ═══ */}
+      <style jsx global>{`
+        .maris-reviews-marquee {
+          width: 100%;
+          overflow: hidden;
+        }
+
+        .maris-reviews-track {
+          display: flex;
+          width: max-content;
+          will-change: transform;
+          animation-duration: 25s;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+
+        .maris-reviews-group {
+          display: flex;
+          flex-shrink: 0;
+          gap: 1.25rem;
+          padding-inline: 1rem;
+        }
+
+        .maris-reviews-track-left {
+          animation-name: maris-reviews-move-left;
+        }
+
+        .maris-reviews-track-right {
+          animation-name: maris-reviews-move-right;
+        }
+
+        .maris-reviews-marquee:hover .maris-reviews-track,
+        .maris-reviews-marquee:focus-within .maris-reviews-track {
+          animation-play-state: paused;
+        }
+
+        @keyframes maris-reviews-move-left {
+          from {
+            transform: translateX(0);
+          }
+          to {
+            transform: translateX(-100%);
+          }
+        }
+
+        @keyframes maris-reviews-move-right {
+          from {
+            transform: translateX(-100%);
+          }
+          to {
+            transform: translateX(0);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .maris-reviews-track-left,
+          .maris-reviews-track-right {
+            animation: none;
+          }
+        }
+      `}</style>
     </>
   );
 }
-
-

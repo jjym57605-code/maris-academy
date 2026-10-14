@@ -1,18 +1,12 @@
+
 import type { Metadata, Viewport } from "next";
-import { Tajawal, Space_Grotesk } from "next/font/google";
+import { Tajawal } from "next/font/google";
 import "./globals.css";
 
 const tajawal = Tajawal({
   subsets: ["arabic", "latin"],
   weight: ["400", "500", "700", "800"],
   variable: "--font-tajawal",
-  display: "swap",
-});
-
-const grotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "700"],
-  variable: "--font-grotesk",
   display: "swap",
 });
 
@@ -123,7 +117,7 @@ export default function RootLayout({
         />
       </head>
 
-      <body className={`${tajawal.variable} ${grotesk.variable}`}>
+      <body className={tajawal.variable}>
         {children}
       </body>
     </html>

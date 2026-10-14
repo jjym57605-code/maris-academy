@@ -25,6 +25,12 @@ const ADMIN_ITEMS = [
     active: true,
   },
   {
+    label: "مراجعة دورات الأساتذة",
+    icon: "🧑‍🏫",
+    href: "/admin/course-reviews",
+    active: true,
+  },
+  {
     label: "مكتبة الدروس",
     icon: "📖",
     href: "/admin/library",
@@ -61,11 +67,11 @@ const ADMIN_ITEMS = [
     active: true,
   },
   {
-  label: "الإعلانات",
-  icon: "📢",
-  href: "/admin/announcements",
-  active: true,
-},
+    label: "الإعلانات",
+    icon: "📢",
+    href: "/admin/announcements",
+    active: true,
+  },
   {
     label: "الإحصائيات",
     icon: "📊",
@@ -96,8 +102,12 @@ export default function AdminLayout({
       <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/95 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between px-4 py-4">
           <div>
-            <h1 className="text-lg font-black">🌊 MARIS ACADEMY</h1>
-            <p className="text-xs text-slate-400">لوحة الإدارة</p>
+            <h1 className="text-lg font-black">
+              🌊 MARIS ACADEMY
+            </h1>
+            <p className="text-xs text-slate-400">
+              لوحة الإدارة
+            </p>
           </div>
 
           <Link
@@ -135,7 +145,9 @@ export default function AdminLayout({
                   item.active &&
                   (pathname === item.href ||
                     (item.href !== "/admin" &&
-                      pathname.startsWith(`${item.href}/`)));
+                      pathname.startsWith(
+                        `${item.href}/`
+                      )));
 
                 if (!item.active) {
                   return (
@@ -144,8 +156,12 @@ export default function AdminLayout({
                       className="flex cursor-not-allowed items-center justify-between rounded-xl px-4 py-3 text-slate-600 opacity-70"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-lg">{item.icon}</span>
-                        <span className="font-bold">{item.label}</span>
+                        <span className="text-lg">
+                          {item.icon}
+                        </span>
+                        <span className="font-bold">
+                          {item.label}
+                        </span>
                       </div>
 
                       <span className="rounded-full bg-white/5 px-2 py-1 text-[10px]">
@@ -165,7 +181,9 @@ export default function AdminLayout({
                         : "text-slate-300 hover:bg-white/5 hover:text-white"
                     }`}
                   >
-                    <span className="text-lg">{item.icon}</span>
+                    <span className="text-lg">
+                      {item.icon}
+                    </span>
                     <span>{item.label}</span>
                   </Link>
                 );

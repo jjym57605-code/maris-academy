@@ -15,6 +15,7 @@ type TeacherApplication = {
   subject: string;
   stream: string;
   bio: string;
+  cv_path: string | null;
   status: ApplicationStatus;
   reviewed_by: string | null;
   reviewed_at: string | null;
@@ -53,6 +54,7 @@ export default function AdminTeachersPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [cvLoadingId, setCvLoadingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -103,7 +105,7 @@ export default function AdminTeachersPage() {
       const { data, error: queryError } = await supabase
         .from("teacher_applications")
         .select(
-          "id, first_name, last_name, email, subject, stream, bio, status, reviewed_by, reviewed_at, admin_note, created_at, updated_at"
+          "id, first_name, last_name, email, subject, stream, bio, cv_path, status, reviewed_by, reviewed_at, admin_note, created_at, updated_at"
         )
         .order("created_at", { ascending: false });
 
@@ -129,6 +131,85 @@ export default function AdminTeachersPage() {
   useEffect(() => {
     void loadApplications();
   }, [loadApplications]);
+
+  async function handleViewCv(application: TeacherApplication) {
+    if (cvLoadingId) return;
+
+    if (!application.cv_path) {
+      setError("هذا الطلب ما فيهش سيرة ذاتية مرفقة.");
+      return;
+    }
+
+    try {
+      setCvLoadingId(application.id);
+      setError(null);
+      setNotice(null);
+
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        throw new Error("تعذر الاتصال بـ Supabase.");
+      }
+
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw new Error(`تعذر التحقق من جلسة الدخول: ${sessionError.message}`);
+      }
+
+      if (!session) {
+        throw new Error("يرجى تسجيل الدخول من جديد.");
+      }
+
+      const { data: isAdmin, error: adminError } = await supabase.rpc(
+        "is_current_user_admin"
+      );
+
+      if (adminError) {
+        throw new Error(`تعذر التحقق من صلاحيات الأدمن: ${adminError.message}`);
+      }
+
+      if (isAdmin !== true) {
+        throw new Error("ليس لديك صلاحية عرض السير الذاتية.");
+      }
+
+      // تحقق إضافي: يجب أن يكون الملف داخل مجلد صاحب الطلب.
+      const expectedPrefix = `${application.id}/`;
+
+      if (!application.cv_path.startsWith(expectedPrefix)) {
+        throw new Error("مسار السيرة الذاتية غير صالح.");
+      }
+
+      const { data, error: signedUrlError } = await supabase.storage
+        .from("teacher-cvs")
+        .createSignedUrl(application.cv_path, 60);
+
+      if (signedUrlError) {
+        throw new Error(
+          `تعذر فتح السيرة الذاتية: ${signedUrlError.message}`
+        );
+      }
+
+      if (!data?.signedUrl) {
+        throw new Error("لم يتم إنشاء رابط صالح للسيرة الذاتية.");
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("VIEW TEACHER CV ERROR:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "حدث خطأ أثناء فتح السيرة الذاتية."
+      );
+    } finally {
+      setCvLoadingId(null);
+    }
+  }
 
   async function handleReview(
     application: TeacherApplication,
@@ -452,6 +533,35 @@ export default function AdminTeachersPage() {
                   <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-slate-400">
                     {application.bio}
                   </p>
+                </div>
+
+                <div className="mt-5 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.04] p-4">
+                  <p className="text-sm font-bold text-slate-200">
+                    السيرة الذاتية (CV)
+                  </p>
+
+                  {application.cv_path ? (
+                    <>
+                      <p className="mt-2 text-xs leading-6 text-slate-400">
+                        ملف PDF محفوظ في مساحة خاصة. الرابط صالح لمدة دقيقة واحدة.
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => void handleViewCv(application)}
+                        disabled={cvLoadingId !== null}
+                        className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {cvLoadingId === application.id
+                          ? "جارٍ فتح السيرة الذاتية..."
+                          : "📄 عرض السيرة الذاتية (PDF)"}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-amber-300">
+                      لا توجد سيرة ذاتية مرفقة بهذا الطلب.
+                    </p>
+                  )}
                 </div>
 
                 {application.status !== "pending" && (

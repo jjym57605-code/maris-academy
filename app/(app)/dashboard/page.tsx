@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -586,22 +587,41 @@ export default function DashboardPage() {
             ))}
 
             {profile?.is_admin && (
-              <Link
-                href="/admin"
-                className="group rounded-3xl border border-purple-400/20 bg-purple-950/20 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-purple-400/40"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-400/10 text-3xl">
-                  👑
-                </div>
+              <>
+                <Link
+                  href="/admin"
+                  className="group rounded-3xl border border-purple-400/20 bg-purple-950/20 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-purple-400/40"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-400/10 text-3xl">
+                    👑
+                  </div>
 
-                <h3 className="mt-4 font-black text-white transition group-hover:text-purple-300">
-                  لوحة الإدارة
-                </h3>
+                  <h3 className="mt-4 font-black text-white transition group-hover:text-purple-300">
+                    لوحة الإدارة
+                  </h3>
 
-                <p className="mt-1 text-sm text-slate-400">
-                  إدارة الأكاديمية ومحتواها
-                </p>
-              </Link>
+                  <p className="mt-1 text-sm text-slate-400">
+                    إدارة الأكاديمية ومحتواها
+                  </p>
+                </Link>
+
+                <Link
+                  href="/admin/teachers"
+                  className="group rounded-3xl border border-amber-400/20 bg-amber-950/20 p-5 shadow-xl shadow-black/10 backdrop-blur transition hover:-translate-y-1 hover:border-amber-400/40"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/10 text-3xl">
+                    🎓
+                  </div>
+
+                  <h3 className="mt-4 font-black text-white transition group-hover:text-amber-300">
+                    طلبات الأساتذة
+                  </h3>
+
+                  <p className="mt-1 text-sm text-slate-400">
+                    عرض ومراجعة طلبات الانضمام
+                  </p>
+                </Link>
+              </>
             )}
           </div>
         </section>

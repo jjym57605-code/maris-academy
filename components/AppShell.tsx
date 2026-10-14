@@ -53,12 +53,6 @@ const ADMIN_NAV_ITEM = {
   label: "لوحة الإدارة",
 } as const;
 
-const TEACHER_APPLICATIONS_NAV_ITEM = {
-  href: "/admin/teachers",
-  icon: "👨‍🏫",
-  label: "طلبات الأساتذة",
-} as const;
-
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -116,7 +110,7 @@ export default function AppShell({
   const [adminCheckedFor, setAdminCheckedFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // شاشة التحميل السينمائية بعد تسجيل الدخول (للأدمن والطالب)
+  // شاشة التحميل السينمائية بعد تسجيل الدخول
   const [showCinematicLoader, setShowCinematicLoader] = useState(false);
   const [isLoaderExiting, setIsLoaderExiting] = useState(false);
   const [loaderProgress, setLoaderProgress] = useState(0);
@@ -274,7 +268,7 @@ export default function AppShell({
     };
   }, [router, session?.user?.id]);
 
-  // شاشة التحميل بعد تسجيل الدخول: مراحل تهيئة حقيقية وليست نسبة عشوائية.
+  // شاشة التحميل بعد تسجيل الدخول
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId) return;
@@ -294,7 +288,7 @@ export default function AppShell({
     }
   }, [session?.user?.id]);
 
-  // الشريط يبدأ من 0 ويتقدم حسب مراحل التهيئة الفعلية.
+  // الشريط يتقدم حسب مراحل التهيئة
   useEffect(() => {
     const userId = session?.user?.id;
     if (!showCinematicLoader || !userId) return;
@@ -342,7 +336,7 @@ export default function AppShell({
     loaderStartedAt,
   ]);
 
-  // نزيل الشاشة بعد نهاية تأثير الاختفاء السينمائي.
+  // إزالة شاشة التحميل بعد تأثير الاختفاء
   useEffect(() => {
     if (!showCinematicLoader || !isLoaderExiting) return;
 
@@ -359,7 +353,7 @@ export default function AppShell({
     setMenuOpen(false);
   }, [pathname]);
 
-  // منع Scroll في الخلفية
+  // منع التمرير في الخلفية
   useEffect(() => {
     if (!menuOpen) {
       document.body.style.overflow = "";
@@ -524,10 +518,7 @@ export default function AppShell({
                       : "text-foam/65 hover:bg-white/5 hover:text-foam"
                   )}
                 >
-                  <span
-                    className="flex w-7 justify-center text-xl"
-                    aria-hidden
-                  >
+                  <span className="flex w-7 justify-center text-xl" aria-hidden>
                     {item.icon}
                   </span>
                   <span>{item.label}</span>
@@ -551,10 +542,7 @@ export default function AppShell({
                     : "text-foam/65 hover:bg-white/5 hover:text-foam"
                 )}
               >
-                <span
-                  className="flex w-7 justify-center text-xl"
-                  aria-hidden
-                >
+                <span className="flex w-7 justify-center text-xl" aria-hidden>
                   {ABOUT_NAV_ITEM.icon}
                 </span>
                 <span>{ABOUT_NAV_ITEM.label}</span>
@@ -575,10 +563,7 @@ export default function AppShell({
                     : "text-foam/65 hover:bg-white/5 hover:text-foam"
                 )}
               >
-                <span
-                  className="flex w-7 justify-center text-xl"
-                  aria-hidden
-                >
+                <span className="flex w-7 justify-center text-xl" aria-hidden>
                   {REVIEW_NAV_ITEM.icon}
                 </span>
                 <span>{REVIEW_NAV_ITEM.label}</span>
@@ -603,38 +588,12 @@ export default function AppShell({
                         : "border-amber-400/10 bg-amber-400/5 text-amber-300/80 hover:bg-amber-400/10 hover:text-amber-200"
                     )}
                   >
-                    <span
-                      className="flex w-7 justify-center text-xl"
-                      aria-hidden
-                    >
+                    <span className="flex w-7 justify-center text-xl" aria-hidden>
                       {ADMIN_NAV_ITEM.icon}
                     </span>
                     <span>{ADMIN_NAV_ITEM.label}</span>
                     {isActive(pathname, ADMIN_NAV_ITEM.href) && (
                       <span className="mr-auto text-amber-300">●</span>
-                    )}
-                  </Link>
-
-                  <Link
-                    href={TEACHER_APPLICATIONS_NAV_ITEM.href}
-                    onClick={() => setMenuOpen(false)}
-                    className={cn(
-                      "flex min-h-[52px] items-center gap-4 rounded-2xl px-4 py-3",
-                      "border font-bold transition-all duration-200",
-                      isActive(pathname, TEACHER_APPLICATIONS_NAV_ITEM.href)
-                        ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-300"
-                        : "border-cyan-400/10 bg-cyan-400/5 text-cyan-300/80 hover:bg-cyan-400/10 hover:text-cyan-200"
-                    )}
-                  >
-                    <span
-                      className="flex w-7 justify-center text-xl"
-                      aria-hidden
-                    >
-                      {TEACHER_APPLICATIONS_NAV_ITEM.icon}
-                    </span>
-                    <span>{TEACHER_APPLICATIONS_NAV_ITEM.label}</span>
-                    {isActive(pathname, TEACHER_APPLICATIONS_NAV_ITEM.href) && (
-                      <span className="mr-auto text-cyan-300">●</span>
                     )}
                   </Link>
                 </>
@@ -648,10 +607,7 @@ export default function AppShell({
               onClick={handleSignOut}
               className="flex min-h-[50px] w-full items-center gap-4 rounded-2xl px-4 py-3 font-bold text-red-300/80 transition-colors hover:bg-red-500/10 hover:text-red-300"
             >
-              <span
-                className="flex w-7 justify-center text-xl"
-                aria-hidden
-              >
+              <span className="flex w-7 justify-center text-xl" aria-hidden>
                 🚪
               </span>
               تسجيل الخروج
@@ -660,9 +616,7 @@ export default function AppShell({
         </aside>
 
         <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
-          <div className="mx-auto w-full max-w-7xl">
-            {children}
-          </div>
+          <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>
 
         {/* الجولة التعريفية بعد التأكد من الصلاحيات واختفاء شاشة التحميل */}
@@ -684,8 +638,16 @@ export default function AppShell({
             }`}
           >
             <style>{`
-              @keyframes maris-loader-glow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-              @keyframes maris-loader-shimmer { from { transform: translateX(-120%); } to { transform: translateX(260%); } }
+              @keyframes maris-loader-glow {
+                0%, 100% { opacity: .55; }
+                50% { opacity: 1; }
+              }
+
+              @keyframes maris-loader-shimmer {
+                from { transform: translateX(-120%); }
+                to { transform: translateX(260%); }
+              }
+
               @media (prefers-reduced-motion: reduce) {
                 .maris-loader-motion { animation: none !important; }
                 .maris-cinematic-loader { transition-duration: 1ms !important; }
@@ -697,7 +659,9 @@ export default function AppShell({
               style={{ backgroundImage: "url('/maris-loader-bg.png')" }}
               aria-hidden="true"
             />
+
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020817]/70 via-[#031126]/10 to-[#020817]/15" />
+
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_42%,rgba(8,145,178,0.16),transparent_45%)]" />
 
             <div className="pointer-events-none absolute inset-x-0 top-[17%] z-10 flex flex-col items-center px-4 text-center sm:top-[15%]">
@@ -728,6 +692,7 @@ export default function AppShell({
 
               <div className="mt-1 flex items-center gap-3 text-xs font-semibold tracking-[0.48em] text-amber-200 sm:mt-2 sm:text-base">
                 <span className="h-px w-8 bg-amber-200/80 sm:w-14" />
+
                 <span
                   dir="ltr"
                   aria-label="ACADEMY"
@@ -751,6 +716,7 @@ export default function AppShell({
                     </span>
                   ))}
                 </span>
+
                 <span className="h-px w-8 bg-amber-200/80 sm:w-14" />
               </div>
 

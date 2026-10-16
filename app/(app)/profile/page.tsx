@@ -18,13 +18,23 @@ import {
 
 const FALLBACK = "غير متوفر حالياً";
 
-const THEMES: {
-  id: ThemePreference;
+type ThemeOption = {
+  id: string;
   name: string;
   description: string;
   image: string;
   colors: string[];
-}[] = [
+};
+
+type ThemeBackgroundRow = {
+  id: string;
+  name: string;
+  image_url: string;
+  is_active: boolean;
+  sort_order: number;
+};
+
+const DEFAULT_THEMES: ThemeOption[] = [
   {
     id: "ocean-navy",
     name: "Deep Ocean",
@@ -47,6 +57,8 @@ const THEMES: {
     colors: ["#042a36", "#0d9488", "#99f6e4"],
   },
 ];
+
+const DEFAULT_TEXT_COLOR = "#E2E8F0";
 
 const TEXT_COLORS = [
   {
@@ -86,18 +98,24 @@ const TEXT_COLORS = [
   },
 ] as const;
 
-const DEFAULT_TEXT_COLOR = "#E2E8F0";
-
-function isThemePreference(value: unknown): value is ThemePreference {
-  return (
-    value === "ocean-navy" ||
-    value === "ocean-midnight" ||
-    value === "ocean-foam"
-  );
+function isThemePreference(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function isTextColor(value: unknown): value is string {
   return TEXT_COLORS.some((color) => color.value === value);
+}
+
+function getThemeColors(id: string): string[] {
+  if (id === "ocean-midnight") {
+    return ["#090d29", "#4f46e5", "#a5b4fc"];
+  }
+
+  if (id === "ocean-foam") {
+    return ["#042a36", "#0d9488", "#99f6e4"];
+  }
+
+  return ["#06182d", "#0891b2", "#67e8f9"];
 }
 
 export default function ProfilePage() {
@@ -107,12 +125,15 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  // الخلفيات القديمة والجديدة
+  const [themes, setThemes] = useState<ThemeOption[]>(DEFAULT_THEMES);
   const [selectedTheme, setSelectedTheme] =
-    useState<ThemePreference>("ocean-navy");
+    useState<string>("ocean-navy");
   const [savingTheme, setSavingTheme] = useState(false);
   const [themeMessage, setThemeMessage] = useState("");
   const [themeError, setThemeError] = useState(false);
 
+  // لون النص
   const [selectedTextColor, setSelectedTextColor] =
     useState<string>(DEFAULT_TEXT_COLOR);
   const [savingTextColor, setSavingTextColor] = useState(false);
@@ -134,28 +155,85 @@ export default function ProfilePage() {
     try {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      if (!user) {
+      if (userError || !user) {
         setError(true);
         return;
       }
 
-      const [profileData, xpTotal] = await Promise.all([
-        ensureProfile(supabase, user),
-        getTotalXP(supabase, user.id),
-      ]);
+      const [profileData, xpTotal, backgroundsResult] =
+        await Promise.all([
+          ensureProfile(supabase, user),
+          getTotalXP(supabase, user.id),
+          supabase
+            .from("theme_backgrounds")
+            .select("id, name, image_url, is_active, sort_order")
+            .eq("is_active", true)
+            .order("sort_order", { ascending: true }),
+        ]);
 
       setProfile(profileData);
       setEmail(user.email ?? null);
       setXp(xpTotal);
 
+      // نبقاو محافظين على الخلفيات الأصلية دائمًا
+      const availableThemes: ThemeOption[] = [...DEFAULT_THEMES];
+
+      if (backgroundsResult.error) {
+        console.error(
+          "Theme backgrounds loading error:",
+          backgroundsResult.error
+        );
+      } else {
+        const rows = (backgroundsResult.data ??
+          []) as ThemeBackgroundRow[];
+
+        for (const background of rows) {
+          if (
+            !background.id ||
+            !background.image_url ||
+            !background.is_active
+          ) {
+            continue;
+          }
+
+          // إذا كانت الخلفية موجودة مسبقًا بنفس المعرّف،
+          // ما نكرروش إضافتها.
+          const existingIndex = availableThemes.findIndex(
+            (theme) => theme.id === background.id
+          );
+
+          const dynamicTheme: ThemeOption = {
+            id: background.id,
+            name: background.name?.trim() || "خلفية جديدة",
+            description: background.name?.trim() || "خلفية من MARIS",
+            image: background.image_url,
+            colors: getThemeColors(background.id),
+          };
+
+          if (existingIndex >= 0) {
+            availableThemes[existingIndex] = dynamicTheme;
+          } else {
+            availableThemes.push(dynamicTheme);
+          }
+        }
+      }
+
+      setThemes(availableThemes);
+
       const savedTheme: unknown = profileData?.theme_preference;
+
       setSelectedTheme(
-        isThemePreference(savedTheme) ? savedTheme : "ocean-navy"
+        isThemePreference(savedTheme) &&
+          availableThemes.some((theme) => theme.id === savedTheme)
+          ? savedTheme
+          : "ocean-navy"
       );
 
       const savedTextColor: unknown = profileData?.text_color;
+
       setSelectedTextColor(
         isTextColor(savedTextColor)
           ? savedTextColor
@@ -173,6 +251,10 @@ export default function ProfilePage() {
     void load();
   }, [load]);
 
+  // ══════════════════════════════════════════════════════
+  // حفظ الخلفية
+  // ══════════════════════════════════════════════════════
+
   const saveTheme = async () => {
     const supabase = getSupabase();
 
@@ -189,12 +271,52 @@ export default function ProfilePage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        throw new Error("ما قدرناش نتحققو من حسابك. عاود سجّل الدخول.");
+        throw new Error(
+          "ما قدرناش نتحققو من حسابك. عاود سجّل الدخول."
+        );
+      }
+
+      // ما نحفظوش خلفية غير موجودة أو تم تعطيلها
+      const chosenTheme = themes.find(
+        (theme) => theme.id === selectedTheme
+      );
+
+      if (!chosenTheme) {
+        throw new Error(
+          "هاذ الخلفية ما بقاتش متاحة. حدّث الصفحة واختار خلفية أخرى."
+        );
+      }
+
+      // الخلفيات المضافة من الأدمن لازم تبقى مفعّلة
+      const isDefaultTheme = DEFAULT_THEMES.some(
+        (theme) => theme.id === selectedTheme
+      );
+
+      if (!isDefaultTheme) {
+        const { data: background, error: backgroundError } =
+          await supabase
+            .from("theme_backgrounds")
+            .select("id, is_active")
+            .eq("id", selectedTheme)
+            .eq("is_active", true)
+            .maybeSingle();
+
+        if (backgroundError) {
+          throw backgroundError;
+        }
+
+        if (!background) {
+          throw new Error(
+            "هاذ الخلفية ما بقاتش متاحة. اختار خلفية أخرى."
+          );
+        }
       }
 
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ theme_preference: selectedTheme })
+        .update({
+          theme_preference: selectedTheme as ThemePreference,
+        })
         .eq("id", user.id);
 
       if (updateError) {
@@ -203,27 +325,44 @@ export default function ProfilePage() {
 
       setProfile((current) =>
         current
-          ? { ...current, theme_preference: selectedTheme }
+          ? {
+              ...current,
+              theme_preference: selectedTheme as ThemePreference,
+            }
           : current
       );
 
+      // تطبيق الخلفية مباشرة دون إعادة تحميل الصفحة
       window.dispatchEvent(
         new CustomEvent("maris-theme-change", {
           detail: selectedTheme,
         })
       );
 
-      setThemeMessage("تم حفظ الثيم بنجاح 🌊");
-    } catch (saveError) {
-      console.error("Theme saving error:", saveError);
+      setThemeMessage("تم حفظ الخلفية بنجاح 🌊");
+       } catch (saveError: unknown) {
+      console.error("Theme saving error details:", saveError);
       setThemeError(true);
-      setThemeMessage(
-        "ما قدرناش نحفظو الثيم. تأكد من الاتصال وحاول مرة أخرى."
-      );
+
+      const errorDetails =
+        typeof saveError === "object" &&
+        saveError !== null &&
+        "message" in saveError &&
+        typeof saveError.message === "string"
+          ? saveError.message
+          : saveError instanceof Error
+            ? saveError.message
+            : "خطأ غير معروف";
+
+      setThemeMessage(`فشل حفظ الخلفية: ${errorDetails}`);
     } finally {
       setSavingTheme(false);
     }
   };
+
+  // ══════════════════════════════════════════════════════
+  // حفظ لون النص
+  // ══════════════════════════════════════════════════════
 
   const saveTextColor = async () => {
     const supabase = getSupabase();
@@ -241,7 +380,9 @@ export default function ProfilePage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        throw new Error("ما قدرناش نتحققو من حسابك. عاود سجّل الدخول.");
+        throw new Error(
+          "ما قدرناش نتحققو من حسابك. عاود سجّل الدخول."
+        );
       }
 
       if (!isTextColor(selectedTextColor)) {
@@ -273,6 +414,7 @@ export default function ProfilePage() {
     } catch (saveError) {
       console.error("Text color saving error:", saveError);
       setTextColorError(true);
+
       setTextColorMessage(
         saveError instanceof Error &&
           saveError.message.startsWith("ما قدرناش")
@@ -321,7 +463,9 @@ export default function ProfilePage() {
             <p className="text-2xl font-extrabold text-white">
               المستوى {level.level}
             </p>
-            <p className="mt-1 font-bold text-cyan-300">{level.name}</p>
+            <p className="mt-1 font-bold text-cyan-300">
+              {level.name}
+            </p>
           </div>
 
           <div className="w-full space-y-2">
@@ -352,7 +496,10 @@ export default function ProfilePage() {
                 key={row.label}
                 className="flex flex-wrap items-center justify-between gap-2 py-3.5"
               >
-                <dt className="text-sm text-foam/50">{row.label}</dt>
+                <dt className="text-sm text-foam/50">
+                  {row.label}
+                </dt>
+
                 <dd
                   dir={row.ltr ? "ltr" : "rtl"}
                   className="break-words font-bold text-foam"
@@ -365,19 +512,24 @@ export default function ProfilePage() {
         </GlassCard>
       </div>
 
-      {/* تخصيص الثيم */}
+      {/* ══════════════════════════════════════════════════════
+          تخصيص الخلفية
+      ══════════════════════════════════════════════════════ */}
+
       <GlassCard className="space-y-5 p-5 sm:p-6">
         <div>
           <h2 className="text-lg font-extrabold text-white">
             🌊 خصّص محيطك
           </h2>
+
           <p className="mt-1 text-sm leading-6 text-foam/60">
-            اختار الخلفية اللي تعجبك. اختيارك يتحفظ في حسابك ويكون خاص بفضاء الطالب.
+            اختار الخلفية اللي تعجبك. الخلفيات الجديدة اللي يضيفها
+            فريق MARIS تظهر هنا تلقائيًا، واختيارك يتحفظ في حسابك.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {THEMES.map((theme) => {
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {themes.map((theme) => {
             const selected = selectedTheme === theme.id;
 
             return (
@@ -397,9 +549,9 @@ export default function ProfilePage() {
                 }`}
               >
                 <div
-                  className="relative h-32 bg-cover bg-center"
+                  className="relative h-36 bg-cover bg-center"
                   style={{
-                    backgroundImage: `linear-gradient(rgba(2, 11, 24, 0.12), rgba(2, 11, 24, 0.5)), url("${theme.image}")`,
+                    backgroundImage: `linear-gradient(rgba(2, 11, 24, 0.12), rgba(2, 11, 24, 0.55)), url("${theme.image}")`,
                   }}
                 >
                   {selected && (
@@ -420,7 +572,10 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-1 bg-slate-950/40 p-4">
-                  <p className="font-bold text-white">{theme.description}</p>
+                  <p className="font-bold text-white">
+                    {theme.description}
+                  </p>
+
                   <p className="text-xs text-foam/50" dir="ltr">
                     {theme.name}
                   </p>
@@ -432,7 +587,7 @@ export default function ProfilePage() {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-5 text-foam/50">
-            الثيم الافتراضي هو Deep Ocean.
+            الخلفية الافتراضية هي Deep Ocean.
           </p>
 
           <button
@@ -447,7 +602,7 @@ export default function ProfilePage() {
                 جارٍ الحفظ...
               </>
             ) : (
-              "حفظ الثيم"
+              "حفظ الخلفية"
             )}
           </button>
         </div>
@@ -466,14 +621,19 @@ export default function ProfilePage() {
         )}
       </GlassCard>
 
-      {/* تخصيص لون النص */}
+      {/* ══════════════════════════════════════════════════════
+          تخصيص لون النص
+      ══════════════════════════════════════════════════════ */}
+
       <GlassCard className="space-y-5 p-5 sm:p-6">
         <div>
           <h2 className="text-lg font-extrabold text-white">
             🎨 خصّص لون النص
           </h2>
+
           <p className="mt-1 text-sm leading-6 text-foam/60">
-            اختار اللون اللي يريحك في القراءة. اللون يتحفظ في حسابك ويتطبق على محتوى صفحات الطالب.
+            اختار اللون اللي يريحك في القراءة. اللون يتحفظ في حسابك
+            ويتطبق على محتوى صفحات الطالب.
           </p>
         </div>
 
@@ -502,7 +662,9 @@ export default function ProfilePage() {
                   style={{ backgroundColor: color.value }}
                 >
                   {selected && (
-                    <span className="font-black text-slate-950">✓</span>
+                    <span className="font-black text-slate-950">
+                      ✓
+                    </span>
                   )}
                 </span>
 
@@ -520,13 +682,17 @@ export default function ProfilePage() {
 
         {/* معاينة اللون المختار */}
         <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-4">
-          <p className="mb-2 text-xs text-foam/50">معاينة لون النص</p>
+          <p className="mb-2 text-xs text-foam/50">
+            معاينة لون النص
+          </p>
+
           <p
             className="text-base font-bold"
             style={{ color: selectedTextColor }}
           >
             مرحباً بك في MARIS ACADEMY ²⁰²⁷ 🌊
           </p>
+
           <p
             className="mt-2 text-sm"
             style={{ color: selectedTextColor }}

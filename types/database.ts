@@ -1,13 +1,10 @@
 
  // ══════════════════════════════════════════════════════
- // أنواع قاعدة البيانات — MARIS ACADEMY ²⁰²⁷
- // تطابق مخطط Supabase
- // ══════════════════════════════════════════════════════
+// أنواع قاعدة البيانات — MARIS ACADEMY ²⁰²⁷
+// تطابق مخطط Supabase
+// ══════════════════════════════════════════════════════
 
-export type ThemePreference =
-  | "ocean-navy"
-  | "ocean-midnight"
-  | "ocean-foam";
+export type ThemePreference = string;
 
 export interface Profile {
   id: string;

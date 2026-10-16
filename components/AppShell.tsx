@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import type { ThemePreference } from "@/types/database";
 
 import {
   getSupabase,
@@ -55,10 +54,18 @@ const ADMIN_NAV_ITEM = {
   label: "لوحة الإدارة",
 } as const;
 
-const THEME_BACKGROUNDS: Record<ThemePreference, string> = {
+// الخلفيات القديمة — تبقى مدعومة
+const DEFAULT_THEME_BACKGROUNDS: Record<string, string> = {
   "ocean-navy": "/images/ocean-navy.png",
   "ocean-midnight": "/images/ocean-midnight.png",
   "ocean-foam": "/images/ocean-foam.png",
+};
+
+type ThemeBackgroundRow = {
+  id: string;
+  image_url: string;
+  is_active: boolean;
+  sort_order?: number;
 };
 
 const DEFAULT_TEXT_COLOR = "#E2E8F0";
@@ -73,16 +80,15 @@ const TEXT_COLORS = [
   "#FDA4AF",
 ] as const;
 
-function isTextColor(value: unknown): value is (typeof TEXT_COLORS)[number] {
+function isTextColor(
+  value: unknown
+): value is (typeof TEXT_COLORS)[number] {
   return TEXT_COLORS.some((color) => color === value);
 }
 
-function isThemePreference(value: unknown): value is ThemePreference {
-  return (
-    value === "ocean-navy" ||
-    value === "ocean-midnight" ||
-    value === "ocean-foam"
-  );
+// يقبل الخلفيات القديمة ومعرّفات UUID للخلفيات الجديدة
+function isThemePreference(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function isActive(pathname: string, href: string) {
@@ -143,8 +149,14 @@ export default function AppShell({
   const [menuOpen, setMenuOpen] = useState(false);
 
   // الثيم المحفوظ في حساب المستخدم
+  // string يسمح بمعرّفات الخلفيات الجديدة من قاعدة البيانات
   const [themePreference, setThemePreference] =
-    useState<ThemePreference>("ocean-navy");
+    useState<string>("ocean-navy");
+
+  // الخلفيات القديمة والجديدة من قاعدة البيانات
+  const [themeBackgrounds, setThemeBackgrounds] = useState<
+    Record<string, string>
+  >(DEFAULT_THEME_BACKGROUNDS);
 
   // لون النص المحفوظ في حساب المستخدم
   const [textColor, setTextColor] = useState<string>(DEFAULT_TEXT_COLOR);
@@ -235,6 +247,7 @@ export default function AppShell({
         setAdminCheckedFor(null);
         setChecking(false);
         setThemePreference("ocean-navy");
+        setThemeBackgrounds(DEFAULT_THEME_BACKGROUNDS);
         setTextColor(DEFAULT_TEXT_COLOR);
         router.replace("/login");
         return;
@@ -261,7 +274,7 @@ export default function AppShell({
   }, [router]);
 
   // ══════════════════════════════════════════════════════
-  // تحميل الثيم ولون النص المحفوظين في حساب المستخدم
+  // تحميل الخلفيات والثيم ولون النص من Supabase
   // ══════════════════════════════════════════════════════
 
   useEffect(() => {
@@ -277,6 +290,48 @@ export default function AppShell({
     let active = true;
 
     async function loadPreferences() {
+      // نبدأ بالخلفيات القديمة حتى تبقى متاحة دائمًا
+      const availableBackgrounds: Record<string, string> = {
+        ...DEFAULT_THEME_BACKGROUNDS,
+      };
+
+      // تحميل الخلفيات المفعّلة التي أضافها الأدمن
+      const {
+        data: backgroundsData,
+        error: backgroundsError,
+      } = await client
+        .from("theme_backgrounds")
+        .select("id, image_url, is_active, sort_order")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+
+      if (!active) return;
+
+      if (backgroundsError) {
+        // إذا تعذّر تحميل الخلفيات الجديدة، تبقى القديمة شغّالة
+        console.error(
+          "Theme backgrounds loading error:",
+          backgroundsError
+        );
+      } else {
+        const rows = (backgroundsData ?? []) as ThemeBackgroundRow[];
+
+        for (const background of rows) {
+          if (
+            background.is_active &&
+            typeof background.id === "string" &&
+            background.id.length > 0 &&
+            typeof background.image_url === "string" &&
+            background.image_url.length > 0
+          ) {
+            availableBackgrounds[background.id] = background.image_url;
+          }
+        }
+      }
+
+      setThemeBackgrounds(availableBackgrounds);
+
+      // تحميل تفضيلات المستخدم
       const { data, error } = await client
         .from("profiles")
         .select("theme_preference, text_color")
@@ -293,8 +348,15 @@ export default function AppShell({
       const savedTheme: unknown = data?.theme_preference;
       const savedTextColor: unknown = data?.text_color;
 
+      // استعمال الخلفية المحفوظة إذا كانت قديمة أو ما زالت مفعّلة
       setThemePreference(
-        isThemePreference(savedTheme) ? savedTheme : "ocean-navy"
+        isThemePreference(savedTheme) &&
+          Object.prototype.hasOwnProperty.call(
+            availableBackgrounds,
+            savedTheme
+          )
+          ? savedTheme
+          : "ocean-navy"
       );
 
       setTextColor(
@@ -382,6 +444,8 @@ export default function AppShell({
           setSession(null);
           setIsAdmin(false);
           setAdminCheckedFor(null);
+          setThemePreference("ocean-navy");
+          setThemeBackgrounds(DEFAULT_THEME_BACKGROUNDS);
           setTextColor(DEFAULT_TEXT_COLOR);
           router.replace("/login");
           return;
@@ -551,9 +615,15 @@ export default function AppShell({
     setIsAdmin(false);
     setAdminCheckedFor(null);
     setThemePreference("ocean-navy");
+    setThemeBackgrounds(DEFAULT_THEME_BACKGROUNDS);
     setTextColor(DEFAULT_TEXT_COLOR);
     router.replace("/login");
   }
+
+  // اختيار صورة الخلفية، مع الرجوع إلى الخلفية القديمة الافتراضية
+  const selectedBackground =
+    themeBackgrounds[themePreference] ??
+    DEFAULT_THEME_BACKGROUNDS["ocean-navy"];
 
   return (
     <StreamPreviewProvider isAdmin={isAdmin}>
@@ -561,7 +631,7 @@ export default function AppShell({
         className="relative min-h-screen"
         data-maris-theme={themePreference}
         style={{
-          backgroundImage: `linear-gradient(rgba(2, 11, 24, 0.28), rgba(2, 11, 24, 0.42)), url("${THEME_BACKGROUNDS[themePreference]}")`,
+          backgroundImage: `linear-gradient(rgba(2, 11, 24, 0.28), rgba(2, 11, 24, 0.42)), url("${selectedBackground}")`,
           backgroundSize: "cover",
           backgroundPosition: "center top",
           backgroundRepeat: "no-repeat",

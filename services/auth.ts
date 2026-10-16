@@ -1,3 +1,4 @@
+
 "use client";
 
 import type {
@@ -5,6 +6,8 @@ import type {
   SupabaseClient,
   User,
 } from "@supabase/supabase-js";
+
+import type { ThemePreference } from "@/types/database";
 
 export type Profile = {
   id: string;
@@ -15,6 +18,8 @@ export type Profile = {
   created_at: string | null;
   updated_at: string | null;
   is_admin: boolean | null;
+  theme_preference?: ThemePreference;
+  text_color?: string;
 };
 
 export type ProfileDefaults = {
@@ -110,12 +115,12 @@ export async function signUp(
 export async function getSession(
   supabase: SupabaseClient
 ): Promise<Session | null> {
+  console.log("=== SUPABASE SESSION CHECK ===");
   const {
     data: { session },
     error,
   } = await supabase.auth.getSession();
 
-  console.log("=== SUPABASE SESSION CHECK ===");
   console.log("HAS SESSION:", Boolean(session));
   console.log("USER ID:", session?.user?.id ?? null);
   console.log(
@@ -148,8 +153,6 @@ export async function signOut(
 
 /* =====================================================
    جلب Profile الموجود
-   مهم:
-   هذه الدالة لا تنشئ Profile جديد.
 ===================================================== */
 
 export async function getProfile(
@@ -159,13 +162,9 @@ export async function getProfile(
   console.log("=== GET PROFILE ===");
   console.log("USER ID:", userId);
 
-  const {
-    data,
-    error,
-  } = await supabase
+  const { data, error } = await supabase
     .from("profiles")
-    .select(
-      `
+    .select(`
       id,
       first_name,
       last_name,
@@ -173,9 +172,10 @@ export async function getProfile(
       maris_id,
       created_at,
       updated_at,
-      is_admin
-      `
-    )
+      is_admin,
+      theme_preference,
+      text_color
+    `)
     .eq("id", userId)
     .maybeSingle();
 
@@ -191,7 +191,6 @@ export async function getProfile(
 
 /* =====================================================
    التأكد من وجود Profile
-   لا يقوم بإنشاء Profile.
 ===================================================== */
 
 export async function ensureProfile(
@@ -221,7 +220,3 @@ export async function ensureProfile(
 
   return profile;
 }
-
-
-
-

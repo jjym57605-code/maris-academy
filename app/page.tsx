@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -278,52 +277,53 @@ export default function LandingPage() {
 
         {/* الترويسة */}
         <header className="relative z-20 border-b border-white/[0.07] bg-[#061321]/80 backdrop-blur-xl">
-          <nav
-            aria-label="التنقل الرئيسي"
-            className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8"
-          >
-            <Link
-              href="/"
-              aria-label="MARIS ACADEMY الصفحة الرئيسية"
-              className="flex shrink-0 items-center gap-2.5"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-cyan-400/20 to-blue-500/10 text-2xl shadow-lg shadow-cyan-500/5">
-                🌊
-              </span>
+<nav
+  aria-label="التنقل الرئيسي"
+  className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4 lg:px-8"
+>
+  <Link
+    href="/"
+    aria-label="MARIS ACADEMY الصفحة الرئيسية"
+    className="flex min-w-0 items-center justify-center gap-2.5 sm:justify-start"
+  >
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-gradient-to-br from-cyan-400/20 to-blue-500/10 text-xl shadow-lg shadow-cyan-500/5 sm:h-11 sm:w-11 sm:rounded-2xl sm:text-2xl">
+      🌊
+    </span>
 
-              <span className="leading-tight">
-                <span className="block font-grotesk text-sm font-extrabold tracking-wide sm:text-base">
-                  MARIS ACADEMY
-                </span>
-                <span className="mt-1 block text-[10px] font-bold tracking-[0.28em] text-cyan-300 sm:text-xs">
-                  CLASS OF 2027
-                </span>
-              </span>
-            </Link>
+    <span className="min-w-0 leading-tight">
+      <span className="block whitespace-nowrap font-grotesk text-xs font-extrabold tracking-wide min-[380px]:text-sm sm:text-base">
+        MARIS ACADEMY
+      </span>
+      <span className="mt-1 block text-[9px] font-bold tracking-[0.2em] text-cyan-300 min-[380px]:text-[10px] sm:text-xs sm:tracking-[0.28em]">
+        CLASS OF 2027
+      </span>
+    </span>
+  </Link>
 
-            <div className="flex items-center gap-2">
-              <Link
-                href="/teachers"
-                className="hidden rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] px-4 py-2.5 text-sm font-bold text-cyan-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 sm:inline-flex"
-              >
-                🎓 فضاء الأساتذة
-              </Link>
+  <div className="grid w-full grid-cols-3 gap-1.5 sm:w-auto sm:flex sm:items-center sm:gap-2">
+    <Link
+      href="/teachers"
+      className="flex min-w-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-1 py-2 text-center text-[10px] font-bold leading-tight text-cyan-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
+    >
+      🎓 فضاء الأساتذة
+    </Link>
 
-              <Link
-                href="/login"
-                className="rounded-xl border border-white/10 px-3 py-2.5 text-xs font-bold text-slate-200 transition hover:border-cyan-300/30 hover:text-cyan-200 sm:px-5 sm:text-sm"
-              >
-                تسجيل الدخول
-              </Link>
+    <Link
+      href="/login"
+      className="flex min-w-0 items-center justify-center rounded-lg border border-white/10 px-1 py-2 text-center text-[10px] font-bold leading-tight text-slate-200 transition hover:border-cyan-300/30 hover:text-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
+    >
+      تسجيل الدخول
+    </Link>
 
-              <Link
-                href="/register"
-                className="rounded-xl bg-cyan-300 px-3 py-2.5 text-xs font-extrabold text-[#061321] shadow-lg shadow-cyan-500/10 transition hover:bg-cyan-200 sm:px-5 sm:text-sm"
-              >
-                انضم إلينا
-              </Link>
-            </div>
-          </nav>
+    <Link
+      href="/register"
+      className="flex min-w-0 items-center justify-center rounded-lg bg-cyan-300 px-1 py-2 text-center text-[10px] font-extrabold leading-tight text-[#061321] shadow-lg shadow-cyan-500/10 transition hover:bg-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
+    >
+      انضم إلينا
+    </Link>
+  </div>
+</nav>
+
         </header>
 
         {/* الواجهة الرئيسية */}

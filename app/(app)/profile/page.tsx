@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -6,7 +7,7 @@ import { ensureProfile } from "@/services/auth";
 import { getTotalXP } from "@/services/stats";
 import { getLevelInfo } from "@/lib/level";
 import { formatDateAr } from "@/lib/utils";
-import type { Profile } from "@/types/database";
+import type { Profile, ThemePreference } from "@/types/database";
 import {
   ErrorState,
   GlassCard,
@@ -15,12 +16,89 @@ import {
   Spinner,
 } from "@/components/ui";
 
-// ══════════════════════════════════════════════════════
-// الملف الشخصي — بيانات المستخدم الموثّق الحقيقية فقط
-// أي قيمة غير موجودة تظهر كـ "غير متوفر حالياً"
-// ══════════════════════════════════════════════════════
-
 const FALLBACK = "غير متوفر حالياً";
+
+const THEMES: {
+  id: ThemePreference;
+  name: string;
+  description: string;
+  image: string;
+  colors: string[];
+}[] = [
+  {
+    id: "ocean-navy",
+    name: "Deep Ocean",
+    description: "المحيط العميق",
+    image: "/images/ocean-navy.png",
+    colors: ["#06182d", "#0891b2", "#67e8f9"],
+  },
+  {
+    id: "ocean-midnight",
+    name: "Midnight Abyss",
+    description: "أعماق منتصف الليل",
+    image: "/images/ocean-midnight.png",
+    colors: ["#090d29", "#4f46e5", "#a5b4fc"],
+  },
+  {
+    id: "ocean-foam",
+    name: "Sea Foam",
+    description: "زَبَد البحر",
+    image: "/images/ocean-foam.png",
+    colors: ["#042a36", "#0d9488", "#99f6e4"],
+  },
+];
+
+const TEXT_COLORS = [
+  {
+    value: "#E2E8F0",
+    name: "رمادي فاتح",
+    description: "اللون الافتراضي",
+  },
+  {
+    value: "#FFFFFF",
+    name: "أبيض",
+    description: "أبيض واضح",
+  },
+  {
+    value: "#67E8F9",
+    name: "سماوي",
+    description: "لون المحيط",
+  },
+  {
+    value: "#99F6E4",
+    name: "فيروزي",
+    description: "لون زبد البحر",
+  },
+  {
+    value: "#C4B5FD",
+    name: "بنفسجي",
+    description: "بنفسجي هادئ",
+  },
+  {
+    value: "#FDE68A",
+    name: "ذهبي",
+    description: "ذهبي دافئ",
+  },
+  {
+    value: "#FDA4AF",
+    name: "وردي",
+    description: "وردي ناعم",
+  },
+] as const;
+
+const DEFAULT_TEXT_COLOR = "#E2E8F0";
+
+function isThemePreference(value: unknown): value is ThemePreference {
+  return (
+    value === "ocean-navy" ||
+    value === "ocean-midnight" ||
+    value === "ocean-foam"
+  );
+}
+
+function isTextColor(value: unknown): value is string {
+  return TEXT_COLORS.some((color) => color.value === value);
+}
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -29,25 +107,62 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  const [selectedTheme, setSelectedTheme] =
+    useState<ThemePreference>("ocean-navy");
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [themeMessage, setThemeMessage] = useState("");
+  const [themeError, setThemeError] = useState(false);
+
+  const [selectedTextColor, setSelectedTextColor] =
+    useState<string>(DEFAULT_TEXT_COLOR);
+  const [savingTextColor, setSavingTextColor] = useState(false);
+  const [textColorMessage, setTextColorMessage] = useState("");
+  const [textColorError, setTextColorError] = useState(false);
+
   const load = useCallback(async () => {
     const supabase = getSupabase();
-    if (!supabase) return;
+
+    if (!supabase) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
     setError(false);
     setLoading(true);
+
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+
+      if (!user) {
+        setError(true);
+        return;
+      }
 
       const [profileData, xpTotal] = await Promise.all([
         ensureProfile(supabase, user),
         getTotalXP(supabase, user.id),
       ]);
+
       setProfile(profileData);
       setEmail(user.email ?? null);
       setXp(xpTotal);
-    } catch {
+
+      const savedTheme: unknown = profileData?.theme_preference;
+      setSelectedTheme(
+        isThemePreference(savedTheme) ? savedTheme : "ocean-navy"
+      );
+
+      const savedTextColor: unknown = profileData?.text_color;
+      setSelectedTextColor(
+        isTextColor(savedTextColor)
+          ? savedTextColor
+          : DEFAULT_TEXT_COLOR
+      );
+    } catch (loadError) {
+      console.error("Profile loading error:", loadError);
       setError(true);
     } finally {
       setLoading(false);
@@ -55,13 +170,125 @@ export default function ProfilePage() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
+
+  const saveTheme = async () => {
+    const supabase = getSupabase();
+
+    if (!supabase || savingTheme) return;
+
+    setSavingTheme(true);
+    setThemeMessage("");
+    setThemeError(false);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("ما قدرناش نتحققو من حسابك. عاود سجّل الدخول.");
+      }
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ theme_preference: selectedTheme })
+        .eq("id", user.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setProfile((current) =>
+        current
+          ? { ...current, theme_preference: selectedTheme }
+          : current
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("maris-theme-change", {
+          detail: selectedTheme,
+        })
+      );
+
+      setThemeMessage("تم حفظ الثيم بنجاح 🌊");
+    } catch (saveError) {
+      console.error("Theme saving error:", saveError);
+      setThemeError(true);
+      setThemeMessage(
+        "ما قدرناش نحفظو الثيم. تأكد من الاتصال وحاول مرة أخرى."
+      );
+    } finally {
+      setSavingTheme(false);
+    }
+  };
+
+  const saveTextColor = async () => {
+    const supabase = getSupabase();
+
+    if (!supabase || savingTextColor) return;
+
+    setSavingTextColor(true);
+    setTextColorMessage("");
+    setTextColorError(false);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        throw new Error("ما قدرناش نتحققو من حسابك. عاود سجّل الدخول.");
+      }
+
+      if (!isTextColor(selectedTextColor)) {
+        throw new Error("اختار لون من الألوان المتاحة.");
+      }
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ text_color: selectedTextColor })
+        .eq("id", user.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setProfile((current) =>
+        current
+          ? { ...current, text_color: selectedTextColor }
+          : current
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("maris-text-color-change", {
+          detail: selectedTextColor,
+        })
+      );
+
+      setTextColorMessage("تم حفظ لون النص بنجاح 🎨");
+    } catch (saveError) {
+      console.error("Text color saving error:", saveError);
+      setTextColorError(true);
+      setTextColorMessage(
+        saveError instanceof Error &&
+          saveError.message.startsWith("ما قدرناش")
+          ? saveError.message
+          : "ما قدرناش نحفظو لون النص. تأكد من الاتصال وحاول مرة أخرى."
+      );
+    } finally {
+      setSavingTextColor(false);
+    }
+  };
 
   if (error) return <ErrorState onRetry={load} />;
   if (loading) return <Spinner />;
 
   const level = getLevelInfo(xp);
+
   const orFallback = (value?: string | null) =>
     value && value.trim().length > 0 ? value : FALLBACK;
 
@@ -73,26 +300,30 @@ export default function ProfilePage() {
     { label: "MARIS ID", value: orFallback(profile?.maris_id), ltr: true },
     {
       label: "تاريخ الانضمام",
-      value: profile?.created_at ? formatDateAr(profile.created_at) : FALLBACK,
+      value: profile?.created_at
+        ? formatDateAr(profile.created_at)
+        : FALLBACK,
     },
   ];
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader title="الملف الشخصي" />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {/* ═══ بطاقة المستوى ═══ */}
+        {/* بطاقة المستوى */}
         <GlassCard className="flex flex-col items-center gap-4 p-6 text-center lg:col-span-1">
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-l from-ocean-500/30 to-cyan-400/20 text-4xl">
             🏆
           </div>
+
           <div>
             <p className="text-2xl font-extrabold text-white">
               المستوى {level.level}
             </p>
             <p className="mt-1 font-bold text-cyan-300">{level.name}</p>
           </div>
+
           <div className="w-full space-y-2">
             <div className="flex items-center justify-between text-sm text-foam/60">
               <span>نقاط الخبرة</span>
@@ -100,18 +331,21 @@ export default function ProfilePage() {
                 {xp} XP
               </span>
             </div>
+
             <ProgressBar percent={level.progress} />
+
             <p className="text-xs text-foam/40">
               {level.xpIntoLevel} / {level.xpForNext} XP نحو المستوى التالي
             </p>
           </div>
         </GlassCard>
 
-        {/* ═══ البيانات الشخصية ═══ */}
+        {/* البيانات الشخصية */}
         <GlassCard className="p-6 lg:col-span-2">
           <h2 className="mb-5 text-lg font-extrabold text-white">
             البيانات الشخصية
           </h2>
+
           <dl className="divide-y divide-white/5">
             {rows.map((row) => (
               <div
@@ -130,6 +364,212 @@ export default function ProfilePage() {
           </dl>
         </GlassCard>
       </div>
+
+      {/* تخصيص الثيم */}
+      <GlassCard className="space-y-5 p-5 sm:p-6">
+        <div>
+          <h2 className="text-lg font-extrabold text-white">
+            🌊 خصّص محيطك
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-foam/60">
+            اختار الخلفية اللي تعجبك. اختيارك يتحفظ في حسابك ويكون خاص بفضاء الطالب.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {THEMES.map((theme) => {
+            const selected = selectedTheme === theme.id;
+
+            return (
+              <button
+                key={theme.id}
+                type="button"
+                onClick={() => {
+                  setSelectedTheme(theme.id);
+                  setThemeMessage("");
+                  setThemeError(false);
+                }}
+                aria-pressed={selected}
+                className={`group overflow-hidden rounded-2xl border text-right transition-all duration-200 ${
+                  selected
+                    ? "border-cyan-300 ring-2 ring-cyan-300/30"
+                    : "border-white/10 hover:border-white/30"
+                }`}
+              >
+                <div
+                  className="relative h-32 bg-cover bg-center"
+                  style={{
+                    backgroundImage: `linear-gradient(rgba(2, 11, 24, 0.12), rgba(2, 11, 24, 0.5)), url("${theme.image}")`,
+                  }}
+                >
+                  {selected && (
+                    <span className="absolute left-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-cyan-300 text-sm font-black text-slate-950">
+                      ✓
+                    </span>
+                  )}
+
+                  <div className="absolute bottom-3 right-3 flex gap-1.5">
+                    {theme.colors.map((color) => (
+                      <span
+                        key={color}
+                        className="h-4 w-4 rounded-full border border-white/40"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1 bg-slate-950/40 p-4">
+                  <p className="font-bold text-white">{theme.description}</p>
+                  <p className="text-xs text-foam/50" dir="ltr">
+                    {theme.name}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-foam/50">
+            الثيم الافتراضي هو Deep Ocean.
+          </p>
+
+          <button
+            type="button"
+            onClick={saveTheme}
+            disabled={savingTheme}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-cyan-500 to-ocean-500 px-6 py-3 font-bold text-white shadow-lg shadow-cyan-950/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingTheme ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                جارٍ الحفظ...
+              </>
+            ) : (
+              "حفظ الثيم"
+            )}
+          </button>
+        </div>
+
+        {themeMessage && (
+          <p
+            role="status"
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              themeError
+                ? "border-red-400/20 bg-red-400/5 text-red-300"
+                : "border-emerald-400/20 bg-emerald-400/5 text-emerald-300"
+            }`}
+          >
+            {themeMessage}
+          </p>
+        )}
+      </GlassCard>
+
+      {/* تخصيص لون النص */}
+      <GlassCard className="space-y-5 p-5 sm:p-6">
+        <div>
+          <h2 className="text-lg font-extrabold text-white">
+            🎨 خصّص لون النص
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-foam/60">
+            اختار اللون اللي يريحك في القراءة. اللون يتحفظ في حسابك ويتطبق على محتوى صفحات الطالب.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {TEXT_COLORS.map((color) => {
+            const selected = selectedTextColor === color.value;
+
+            return (
+              <button
+                key={color.value}
+                type="button"
+                onClick={() => {
+                  setSelectedTextColor(color.value);
+                  setTextColorMessage("");
+                  setTextColorError(false);
+                }}
+                aria-pressed={selected}
+                className={`flex min-h-[100px] flex-col items-center justify-center gap-3 rounded-2xl border p-4 transition-all ${
+                  selected
+                    ? "border-cyan-300 bg-cyan-400/10 ring-2 ring-cyan-300/30"
+                    : "border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.06]"
+                }`}
+              >
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white/30 shadow-lg"
+                  style={{ backgroundColor: color.value }}
+                >
+                  {selected && (
+                    <span className="font-black text-slate-950">✓</span>
+                  )}
+                </span>
+
+                <span className="text-sm font-bold text-white">
+                  {color.name}
+                </span>
+
+                <span className="text-center text-xs text-foam/50">
+                  {color.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* معاينة اللون المختار */}
+        <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-4">
+          <p className="mb-2 text-xs text-foam/50">معاينة لون النص</p>
+          <p
+            className="text-base font-bold"
+            style={{ color: selectedTextColor }}
+          >
+            مرحباً بك في MARIS ACADEMY ²⁰²⁷ 🌊
+          </p>
+          <p
+            className="mt-2 text-sm"
+            style={{ color: selectedTextColor }}
+          >
+            هكذا يظهر النص باللون اللي اخترته.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-foam/50">
+            اللون الافتراضي هو الرمادي الفاتح.
+          </p>
+
+          <button
+            type="button"
+            onClick={saveTextColor}
+            disabled={savingTextColor}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-cyan-500 to-ocean-500 px-6 py-3 font-bold text-white shadow-lg shadow-cyan-950/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingTextColor ? (
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                جارٍ الحفظ...
+              </>
+            ) : (
+              "حفظ لون النص"
+            )}
+          </button>
+        </div>
+
+        {textColorMessage && (
+          <p
+            role="status"
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              textColorError
+                ? "border-red-400/20 bg-red-400/5 text-red-300"
+                : "border-emerald-400/20 bg-emerald-400/5 text-emerald-300"
+            }`}
+          >
+            {textColorMessage}
+          </p>
+        )}
+      </GlassCard>
     </div>
   );
 }

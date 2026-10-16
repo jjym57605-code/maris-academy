@@ -372,6 +372,13 @@ export default function AdminPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* مركز إدارة الأساتذة */}
+            <QuickAction
+              href="/admin/teachers"
+              icon="🎓"
+              title="إدارة الأساتذة"
+            />
+
             <QuickAction
               href="/admin/reels"
               icon="🎬"
@@ -636,4 +643,3 @@ function QuickAction({
     </Link>
   );
 }
-

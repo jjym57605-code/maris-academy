@@ -1,7 +1,13 @@
-// ══════════════════════════════════════════════════════
-// أنواع قاعدة البيانات — MARIS ACADEMY ²⁰²⁷
-// تطابق مخطط Supabase
-// ══════════════════════════════════════════════════════
+
+ // ══════════════════════════════════════════════════════
+ // أنواع قاعدة البيانات — MARIS ACADEMY ²⁰²⁷
+ // تطابق مخطط Supabase
+ // ══════════════════════════════════════════════════════
+
+export type ThemePreference =
+  | "ocean-navy"
+  | "ocean-midnight"
+  | "ocean-foam";
 
 export interface Profile {
   id: string;
@@ -11,6 +17,8 @@ export interface Profile {
   maris_id: string | null;
   created_at: string | null;
   updated_at: string | null;
+  theme_preference?: ThemePreference;
+  text_color?: string;
 }
 
 export interface Subject {
@@ -140,7 +148,6 @@ export interface SubmitQuizResult {
   wrong: number;
   total: number;
   xp_earned: number;
-
   achievement_unlocked: boolean;
   achievement: SubmitQuizAchievement | null;
 }
@@ -154,4 +161,3 @@ export const BAC_STREAMS = [
   "آداب وفلسفة",
   "لغات أجنبية",
 ] as const;
-

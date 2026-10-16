@@ -23,6 +23,7 @@ type Subject = {
 };
 
 type CourseStatus = "draft" | "pending" | "approved" | "rejected";
+type ReelStatus = "draft" | "pending" | "approved" | "rejected";
 
 type TeacherCourse = {
   id: string;
@@ -34,6 +35,20 @@ type TeacherCourse = {
   price: number | null;
   is_published: boolean;
   review_status: CourseStatus;
+  created_at: string;
+};
+
+type TeacherReel = {
+  id: string;
+  title: string;
+  description: string | null;
+  video_url: string;
+  thumbnail_url: string | null;
+  subject_id: string | null;
+  target_stream: string | null;
+  is_published: boolean;
+  review_status: ReelStatus;
+  admin_note: string | null;
   created_at: string;
 };
 
@@ -59,6 +74,18 @@ type PageState =
 
 const LESSON_SELECT =
   "id, course_id, title, content, resources, order_index, created_at, video_url";
+
+const REEL_SELECT =
+  "id, title, description, video_url, thumbnail_url, subject_id, target_stream, is_published, review_status, admin_note, created_at";
+
+const STREAMS = [
+  "علوم تجريبية",
+  "رياضيات",
+  "تقني رياضي",
+  "تسيير واقتصاد",
+  "آداب وفلسفة",
+  "لغات أجنبية",
+];
 
 function resourceLines(resources: unknown): string[] {
   if (Array.isArray(resources)) {
@@ -102,12 +129,14 @@ export default function TeacherWorkspacePage() {
   const [userId, setUserId] = useState("");
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [courses, setCourses] = useState<TeacherCourse[]>([]);
+  const [reels, setReels] = useState<TeacherReel[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [contentMessage, setContentMessage] = useState("");
   const [contentError, setContentError] = useState("");
   const [retry, setRetry] = useState(0);
   const [saving, setSaving] = useState(false);
   const [showCourseForm, setShowCourseForm] = useState(false);
+  const [showReelForm, setShowReelForm] = useState(false);
 
   const [subjectId, setSubjectId] = useState("");
   const [title, setTitle] = useState("");
@@ -115,6 +144,13 @@ export default function TeacherWorkspacePage() {
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [isFree, setIsFree] = useState(true);
   const [price, setPrice] = useState("");
+
+  const [reelTitle, setReelTitle] = useState("");
+  const [reelDescription, setReelDescription] = useState("");
+  const [reelSubjectId, setReelSubjectId] = useState("");
+  const [reelTargetStream, setReelTargetStream] = useState("");
+  const [reelVideoFile, setReelVideoFile] = useState<File | null>(null);
+  const [reelThumbnailFile, setReelThumbnailFile] = useState<File | null>(null);
 
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [lessons, setLessons] = useState<TeacherLesson[]>([]);
@@ -199,16 +235,22 @@ export default function TeacherWorkspacePage() {
           return;
         }
 
-        const [subjectsResult, coursesResult] = await Promise.all([
-          supabase.from("subjects").select("id, name").order("name"),
-          supabase
-            .from("courses")
-            .select(
-              "id, subject_id, title, description, thumbnail_url, is_free, price, is_published, review_status, created_at"
-            )
-            .eq("teacher_id", user.id)
-            .order("created_at", { ascending: false }),
-        ]);
+        const [subjectsResult, coursesResult, reelsResult] =
+          await Promise.all([
+            supabase.from("subjects").select("id, name").order("name"),
+            supabase
+              .from("courses")
+              .select(
+                "id, subject_id, title, description, thumbnail_url, is_free, price, is_published, review_status, created_at"
+              )
+              .eq("teacher_id", user.id)
+              .order("created_at", { ascending: false }),
+            supabase
+              .from("reels")
+              .select(REEL_SELECT)
+              .eq("teacher_id", user.id)
+              .order("created_at", { ascending: false }),
+          ]);
 
         if (!active) return;
 
@@ -217,7 +259,18 @@ export default function TeacherWorkspacePage() {
             "تعذّر تحميل قائمة المواد. حدّث الصفحة وحاول مجددًا."
           );
         } else {
-          setSubjects((subjectsResult.data ?? []) as Subject[]);
+          const loadedSubjects = (subjectsResult.data ?? []) as Subject[];
+          setSubjects(loadedSubjects);
+
+          const matchingSubject = loadedSubjects.find(
+            (subject) =>
+              subject.name.trim().toLowerCase() ===
+              application.subject.trim().toLowerCase()
+          );
+
+          if (matchingSubject) {
+            setReelSubjectId(matchingSubject.id);
+          }
         }
 
         if (coursesResult.error) {
@@ -228,6 +281,17 @@ export default function TeacherWorkspacePage() {
           );
         } else {
           setCourses((coursesResult.data ?? []) as TeacherCourse[]);
+        }
+
+        if (reelsResult.error) {
+          console.error("Load teacher reels error:", reelsResult.error);
+          setContentError((current) =>
+            current
+              ? `${current} وتعذّر تحميل ريلزاتك.`
+              : "تعذّر تحميل ريلزاتك. تحقق من صلاحيات جدول الريلزات."
+          );
+        } else {
+          setReels((reelsResult.data ?? []) as TeacherReel[]);
         }
 
         setPageState("approved");
@@ -275,9 +339,7 @@ export default function TeacherWorkspacePage() {
     } catch (error: unknown) {
       console.error("Load teacher lessons error:", error);
       setContentError(
-        error instanceof Error
-          ? error.message
-          : "تعذّر تحميل دروس الدورة."
+        error instanceof Error ? error.message : "تعذّر تحميل دروس الدورة."
       );
     } finally {
       setLoadingLessons(false);
@@ -416,6 +478,268 @@ export default function TeacherWorkspacePage() {
     }
   }
 
+  async function uploadTeacherReelFile(
+    file: File,
+    folder: "videos" | "thumbnails",
+    ownerId: string
+  ): Promise<string> {
+    const supabase = getSupabase();
+    if (!supabase) throw new Error("الاتصال بقاعدة البيانات غير متاح.");
+
+    const rawExtension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const extension = /^[a-z0-9]+$/.test(rawExtension)
+      ? rawExtension
+      : folder === "videos"
+        ? "mp4"
+        : "jpg";
+
+    const path = `teachers/${ownerId}/${folder}/${crypto.randomUUID()}.${extension}`;
+
+    const { error } = await supabase.storage.from("reels").upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+
+    if (error) {
+      console.error("Teacher reel file upload error:", error);
+      throw new Error(
+        folder === "videos"
+          ? "تعذّر رفع الفيديو. تحقق من صلاحيات التخزين وحجم الملف."
+          : "تعذّر رفع صورة الغلاف. حاول بصورة أخرى."
+      );
+    }
+
+    const { data } = supabase.storage.from("reels").getPublicUrl(path);
+
+    if (!data.publicUrl) {
+      throw new Error("تم رفع الملف لكن تعذّر الحصول على رابطه.");
+    }
+
+    return data.publicUrl;
+  }
+
+  async function handleCreateReel(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setContentError("");
+    setContentMessage("");
+
+    const supabase = getSupabase();
+
+    if (!supabase || !userId) {
+      setContentError("انتهت الجلسة أو تعذّر الاتصال. سجّل الدخول مجددًا.");
+      return;
+    }
+
+    if (pageState !== "approved" || teacher?.status !== "approved") {
+      setContentError("إنشاء الريلزات متاح للأساتذة المقبولين فقط.");
+      return;
+    }
+
+    if (!reelTitle.trim() || !reelSubjectId || !reelVideoFile) {
+      setContentError("اكتب عنوان الريل، اختَر المادة، وارفع الفيديو.");
+      return;
+    }
+
+    if (!reelVideoFile.type.startsWith("video/")) {
+      setContentError("الملف المختار ليس فيديو صالحًا.");
+      return;
+    }
+
+    if (reelVideoFile.size > 100 * 1024 * 1024) {
+      setContentError("حجم الفيديو يتجاوز 100 ميغابايت.");
+      return;
+    }
+
+    if (reelThumbnailFile) {
+      if (!reelThumbnailFile.type.startsWith("image/")) {
+        setContentError("ملف الغلاف لازم يكون صورة.");
+        return;
+      }
+
+      if (reelThumbnailFile.size > 5 * 1024 * 1024) {
+        setContentError("حجم صورة الغلاف يتجاوز 5 ميغابايت.");
+        return;
+      }
+    }
+
+    setSaving(true);
+
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      if (!user || user.id !== userId) {
+        throw new Error("انتهت الجلسة أو تغيّر الحساب. سجّل الدخول مجددًا.");
+      }
+
+      const { data: application, error: applicationError } = await supabase
+        .from("teacher_applications")
+        .select("status")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (applicationError) throw applicationError;
+
+      if (application?.status !== "approved") {
+        throw new Error(
+          "حالة اعتمادك تغيّرت. حدّث الصفحة للتأكد من صلاحياتك."
+        );
+      }
+
+      const videoUrl = await uploadTeacherReelFile(
+        reelVideoFile,
+        "videos",
+        user.id
+      );
+
+      let uploadedThumbnailUrl: string | null = null;
+
+      if (reelThumbnailFile) {
+        uploadedThumbnailUrl = await uploadTeacherReelFile(
+          reelThumbnailFile,
+          "thumbnails",
+          user.id
+        );
+      }
+
+      const { data, error } = await supabase
+        .from("reels")
+        .insert({
+          teacher_id: user.id,
+          title: reelTitle.trim(),
+          description: reelDescription.trim() || null,
+          video_url: videoUrl,
+          thumbnail_url: uploadedThumbnailUrl,
+          subject_id: reelSubjectId,
+          target_stream: reelTargetStream || null,
+          is_published: false,
+          views_count: 0,
+          review_status: "draft",
+        })
+        .select(REEL_SELECT)
+        .single();
+
+      if (error) throw error;
+
+      const createdReel = data as TeacherReel;
+
+      setReels((current) => [createdReel, ...current]);
+      setReelTitle("");
+      setReelDescription("");
+      setReelVideoFile(null);
+      setReelThumbnailFile(null);
+      setReelTargetStream("");
+      setShowReelForm(false);
+
+      const matchingSubject = subjects.find(
+        (subject) =>
+          subject.name.trim().toLowerCase() ===
+          (teacher?.subject ?? "").trim().toLowerCase()
+      );
+
+      setReelSubjectId(matchingSubject?.id ?? "");
+
+      setContentMessage(
+        "تحفظ الريل كمسودة. راجعه من قائمة ريلزاتي ثم أرسله للإدارة للمراجعة."
+      );
+    } catch (error: unknown) {
+      console.error("Create teacher reel error:", error);
+      setContentError(
+        error instanceof Error
+          ? error.message
+          : "تعذّر إنشاء الريل. تحقق من صلاحيات قاعدة البيانات والتخزين."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmitReel(reel: TeacherReel) {
+    const supabase = getSupabase();
+
+    setContentError("");
+    setContentMessage("");
+
+    if (!supabase || !userId) {
+      setContentError("انتهت الجلسة أو تعذّر الاتصال.");
+      return;
+    }
+
+    if (reel.review_status !== "draft" && reel.review_status !== "rejected") {
+      setContentError("هذا الريل ليس مسودة قابلة للإرسال.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      if (!user || user.id !== userId) {
+        throw new Error("انتهت الجلسة. سجّل الدخول مجددًا.");
+      }
+
+      const { data: application, error: applicationError } = await supabase
+        .from("teacher_applications")
+        .select("status")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (applicationError) throw applicationError;
+
+      if (application?.status !== "approved") {
+        throw new Error("حسابك لم يعد معتمدًا. حدّث الصفحة وتحقق من حالته.");
+      }
+
+      const { data, error } = await supabase
+        .from("reels")
+        .update({
+          review_status: "pending",
+          is_published: false,
+          reviewed_by: null,
+          reviewed_at: null,
+        })
+        .eq("id", reel.id)
+        .eq("teacher_id", user.id)
+        .eq("review_status", reel.review_status)
+        .select(REEL_SELECT)
+        .single();
+
+      if (error) throw error;
+
+      const updatedReel = data as TeacherReel;
+
+      setReels((current) =>
+        current.map((item) =>
+          item.id === updatedReel.id ? updatedReel : item
+        )
+      );
+
+      setContentMessage(
+        "تم إرسال الريل للإدارة. لن يظهر للطلاب حتى تتم الموافقة عليه ونشره."
+      );
+    } catch (error: unknown) {
+      console.error("Submit teacher reel error:", error);
+      setContentError(
+        error instanceof Error
+          ? error.message
+          : "تعذّر إرسال الريل للمراجعة."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSaveLesson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setContentError("");
@@ -544,9 +868,7 @@ export default function TeacherWorkspacePage() {
       return;
     }
 
-    if (
-      !window.confirm(`هل تريد حذف الدرس «${lesson.title}»؟`)
-    ) {
+    if (!window.confirm(`هل تريد حذف الدرس «${lesson.title}»؟`)) {
       return;
     }
 
@@ -826,8 +1148,7 @@ export default function TeacherWorkspacePage() {
             مرحبًا أستاذ {teacher?.first_name}
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-white/55 sm:text-base">
-            حضّر دوراتك ودروسك على راحتك، ثم أرسل الدورة كاملة للإدارة
-            للمراجعة قبل نشرها.
+            حضّر دوراتك ودروسك وريلزاتك، ثم أرسل المحتوى للإدارة للمراجعة قبل النشر.
           </p>
         </div>
 
@@ -854,8 +1175,7 @@ export default function TeacherWorkspacePage() {
             <div className="text-3xl" aria-hidden>📚</div>
             <h2 className="mt-4 text-xl font-black">أدواتك التعليمية</h2>
             <p className="mt-3 text-sm leading-8 text-white/60">
-              أنشئ مسودة، أضف دروسها وروابط الفيديو والموارد، ثم أرسلها
-              للمراجعة بعد إكمالها.
+              أنشئ دوراتك وأضف الدروس، أو حضّر ريلزًا تعليميًا. كل المحتوى يبقى غير منشور حتى تراجعه الإدارة.
             </p>
 
             <button
@@ -867,12 +1187,27 @@ export default function TeacherWorkspacePage() {
               }}
               className="mt-6 w-full rounded-xl bg-cyan-400 px-5 py-3 font-black text-[#061426] transition hover:bg-cyan-300"
             >
-              {showCourseForm ? "إغلاق النموذج" : "＋ إنشاء دورة جديدة"}
+              {showCourseForm ? "إغلاق نموذج الدورة" : "＋ إنشاء دورة جديدة"}
             </button>
 
-            <div className="mt-4 space-y-3">
-              <WorkspaceItem icon="🎬" title="إعداد الريلزات" description="سيُضاف في خطوة لاحقة" />
-              <WorkspaceItem icon="🧩" title="إعداد الاختبارات" description="سيُضاف في خطوة لاحقة" />
+            <button
+              type="button"
+              onClick={() => {
+                setContentMessage("");
+                setContentError("");
+                setShowReelForm((value) => !value);
+              }}
+              className="mt-3 w-full rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-5 py-3 font-black text-cyan-200 transition hover:bg-cyan-400/20"
+            >
+              {showReelForm ? "إغلاق نموذج الريلز" : "🎬 إنشاء ريلز جديد"}
+            </button>
+
+            <div className="mt-4">
+              <WorkspaceItem
+                icon="🧩"
+                title="إعداد الاختبارات"
+                description="سيُضاف في خطوة لاحقة"
+              />
             </div>
 
             <div className="mt-6 rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-4 text-xs leading-7 text-cyan-100/80">
@@ -1009,17 +1344,257 @@ export default function TeacherWorkspacePage() {
           </section>
         )}
 
-        {contentError && !showCourseForm && (
+        {showReelForm && (
+          <section className="mt-6 rounded-3xl border border-cyan-400/20 bg-white/[0.035] p-6 sm:p-8">
+            <h2 className="text-xl font-black">إنشاء ريلز تعليمي</h2>
+            <p className="mt-2 text-sm leading-7 text-white/55">
+              ارفع الفيديو وحدد المادة والشعبة. يُحفظ الريل كمسودة أولًا، ثم يمكنك إرساله للإدارة للمراجعة.
+            </p>
+
+            <form onSubmit={handleCreateReel} className="mt-6 space-y-5">
+              <div>
+                <label htmlFor="reel-title" className="mb-2 block text-sm font-bold">
+                  عنوان الريل *
+                </label>
+                <input
+                  id="reel-title"
+                  value={reelTitle}
+                  onChange={(event) => setReelTitle(event.target.value)}
+                  required
+                  maxLength={160}
+                  placeholder="مثال: قاعدة سريعة في الرياضيات"
+                  className="w-full rounded-xl border border-white/10 bg-[#071a2d] px-4 py-3 text-white outline-none placeholder:text-white/30 focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="reel-description" className="mb-2 block text-sm font-bold">
+                  وصف الريل (اختياري)
+                </label>
+                <textarea
+                  id="reel-description"
+                  value={reelDescription}
+                  onChange={(event) => setReelDescription(event.target.value)}
+                  rows={3}
+                  maxLength={3000}
+                  placeholder="اكتب وصفًا قصيرًا للمحتوى..."
+                  className="w-full resize-y rounded-xl border border-white/10 bg-[#071a2d] px-4 py-3 text-white outline-none placeholder:text-white/30 focus:border-cyan-400"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="reel-subject" className="mb-2 block text-sm font-bold">
+                  المادة *
+                </label>
+                <select
+                  id="reel-subject"
+                  value={reelSubjectId}
+                  onChange={(event) => setReelSubjectId(event.target.value)}
+                  required
+                  className="w-full rounded-xl border border-white/10 bg-[#071a2d] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="">اختَر المادة</option>
+                  {subjects.map((subject) => (
+                    <option key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="reel-stream" className="mb-2 block text-sm font-bold">
+                  الشعبة المستهدفة
+                </label>
+                <select
+                  id="reel-stream"
+                  value={reelTargetStream}
+                  onChange={(event) => setReelTargetStream(event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-[#071a2d] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="">عام — جميع الشعب</option>
+                  {STREAMS.map((stream) => (
+                    <option key={stream} value={stream}>
+                      {stream}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="reel-video" className="mb-2 block text-sm font-bold">
+                  ملف الفيديو *
+                </label>
+                <input
+                  id="reel-video"
+                  type="file"
+                  accept="video/*"
+                  required
+                  onChange={(event) =>
+                    setReelVideoFile(event.target.files?.[0] ?? null)
+                  }
+                  className="block w-full rounded-xl border border-white/10 bg-[#071a2d] px-4 py-3 text-sm text-white file:ml-3 file:rounded-lg file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:font-bold file:text-[#061426]"
+                />
+                <p className="mt-2 text-xs leading-6 text-white/40">
+                  الحجم الأقصى 100 ميغابايت. يُفضّل فيديو MP4.
+                  {reelVideoFile
+                    ? ` الملف المختار: ${reelVideoFile.name}`
+                    : ""}
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="reel-thumbnail" className="mb-2 block text-sm font-bold">
+                  صورة الغلاف (اختيارية)
+                </label>
+                <input
+                  id="reel-thumbnail"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) =>
+                    setReelThumbnailFile(event.target.files?.[0] ?? null)
+                  }
+                  className="block w-full rounded-xl border border-white/10 bg-[#071a2d] px-4 py-3 text-sm text-white file:ml-3 file:rounded-lg file:border-0 file:bg-cyan-400 file:px-3 file:py-2 file:font-bold file:text-[#061426]"
+                />
+                <p className="mt-2 text-xs leading-6 text-white/40">
+                  الحجم الأقصى 5 ميغابايت.
+                  {reelThumbnailFile
+                    ? ` الملف المختار: ${reelThumbnailFile.name}`
+                    : ""}
+                </p>
+              </div>
+
+              {contentError && (
+                <p role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-7 text-red-200">
+                  {contentError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={saving || subjects.length === 0}
+                className="w-full rounded-xl bg-cyan-400 px-5 py-3 font-black text-[#061426] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "جارٍ رفع الملفات وحفظ الريل..." : "حفظ الريل كمسودة"}
+              </button>
+            </form>
+          </section>
+        )}
+
+        {contentError && !showCourseForm && !showReelForm && (
           <p role="alert" className="mt-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-7 text-red-200">
             {contentError}
           </p>
         )}
 
-        {contentMessage && !showCourseForm && (
+        {contentMessage && !showCourseForm && !showReelForm && (
           <p role="status" className="mt-6 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm leading-7 text-emerald-200">
             {contentMessage}
           </p>
         )}
+
+        <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-6 sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black">ريلزاتي</h2>
+              <p className="mt-2 text-sm text-white/50">
+                تابع حالة الريلزات، وأرسل المسودات أو الريلزات المرفوضة للمراجعة من جديد.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold">
+              {reels.length} ريلز
+            </span>
+          </div>
+
+          {reels.length === 0 ? (
+            <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-8 text-center">
+              <div className="text-3xl" aria-hidden>🎬</div>
+              <p className="mt-3 font-bold">ما أنشأت حتى ريلز حاليًا</p>
+              <p className="mt-2 text-sm text-white/45">
+                اضغط على «إنشاء ريلز جديد» للبدء.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {reels.map((reel) => (
+                <article
+                  key={reel.id}
+                  className="rounded-2xl border border-white/10 bg-[#071a2d]/80 p-5"
+                >
+                  {reel.thumbnail_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={reel.thumbnail_url}
+                      alt=""
+                      className="mb-4 h-40 w-full rounded-xl object-cover"
+                    />
+                  )}
+
+                  <p className="text-xs font-bold text-cyan-300">
+                    {subjects.find((subject) => subject.id === reel.subject_id)?.name ?? "مادة غير محددة"}
+                  </p>
+
+                  <h3 className="mt-2 text-lg font-black">{reel.title}</h3>
+
+                  {reel.description && (
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-white/55">
+                      {reel.description}
+                    </p>
+                  )}
+
+                  <p className="mt-3 text-xs text-white/45">
+                    الشعبة: {reel.target_stream || "عام — جميع الشعب"}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <ReelStatusBadge status={reel.review_status} />
+                    {reel.is_published && (
+                      <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-300">
+                        منشور
+                      </span>
+                    )}
+                  </div>
+
+                  {reel.admin_note && (
+                    <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-sm leading-7 text-amber-100/90">
+                      <p className="font-bold">ملاحظة الإدارة</p>
+                      <p className="mt-1 whitespace-pre-wrap">{reel.admin_note}</p>
+                    </div>
+                  )}
+
+                  <a
+                    href={reel.video_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-4 inline-block text-sm font-bold text-cyan-200 underline"
+                  >
+                    مشاهدة الفيديو المرفوع
+                  </a>
+
+                  <p className="mt-3 text-xs text-white/35">
+                    أُنشئ في {new Date(reel.created_at).toLocaleDateString("ar-DZ")}
+                  </p>
+
+                  {(reel.review_status === "draft" ||
+                    reel.review_status === "rejected") && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleSubmitReel(reel)}
+                      className="mt-5 w-full rounded-xl bg-cyan-400 px-4 py-3 text-sm font-black text-[#061426] transition hover:bg-cyan-300 disabled:opacity-50"
+                    >
+                      {saving
+                        ? "جارٍ الإرسال..."
+                        : reel.review_status === "rejected"
+                          ? "إعادة إرسال الريل للمراجعة"
+                          : "إرسال الريل للمراجعة"}
+                    </button>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-6 sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1357,6 +1932,28 @@ function StatusBadge({ status }: { status: CourseStatus }) {
     pending: "في انتظار المراجعة",
     approved: "مقبولة",
     rejected: "مرفوضة",
+  };
+
+  return (
+    <span className={`rounded-full border px-3 py-1 text-xs font-bold ${styles[status]}`}>
+      {labels[status]}
+    </span>
+  );
+}
+
+function ReelStatusBadge({ status }: { status: ReelStatus }) {
+  const styles: Record<ReelStatus, string> = {
+    draft: "border-cyan-400/20 bg-cyan-400/10 text-cyan-200",
+    pending: "border-amber-400/20 bg-amber-400/10 text-amber-200",
+    approved: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
+    rejected: "border-red-400/20 bg-red-400/10 text-red-200",
+  };
+
+  const labels: Record<ReelStatus, string> = {
+    draft: "مسودة",
+    pending: "في انتظار المراجعة",
+    approved: "مقبول",
+    rejected: "مرفوض",
   };
 
   return (

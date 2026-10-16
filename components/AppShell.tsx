@@ -1,9 +1,11 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
+import type { ThemePreference } from "@/types/database";
 
 import {
   getSupabase,
@@ -52,6 +54,36 @@ const ADMIN_NAV_ITEM = {
   icon: "👑",
   label: "لوحة الإدارة",
 } as const;
+
+const THEME_BACKGROUNDS: Record<ThemePreference, string> = {
+  "ocean-navy": "/images/ocean-navy.png",
+  "ocean-midnight": "/images/ocean-midnight.png",
+  "ocean-foam": "/images/ocean-foam.png",
+};
+
+const DEFAULT_TEXT_COLOR = "#E2E8F0";
+
+const TEXT_COLORS = [
+  "#E2E8F0",
+  "#FFFFFF",
+  "#67E8F9",
+  "#99F6E4",
+  "#C4B5FD",
+  "#FDE68A",
+  "#FDA4AF",
+] as const;
+
+function isTextColor(value: unknown): value is (typeof TEXT_COLORS)[number] {
+  return TEXT_COLORS.some((color) => color === value);
+}
+
+function isThemePreference(value: unknown): value is ThemePreference {
+  return (
+    value === "ocean-navy" ||
+    value === "ocean-midnight" ||
+    value === "ocean-foam"
+  );
+}
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -110,7 +142,14 @@ export default function AppShell({
   const [adminCheckedFor, setAdminCheckedFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // شاشة التحميل السينمائية بعد تسجيل الدخول
+  // الثيم المحفوظ في حساب المستخدم
+  const [themePreference, setThemePreference] =
+    useState<ThemePreference>("ocean-navy");
+
+  // لون النص المحفوظ في حساب المستخدم
+  const [textColor, setTextColor] = useState<string>(DEFAULT_TEXT_COLOR);
+
+  // شاشة التحميل السينمائية
   const [showCinematicLoader, setShowCinematicLoader] = useState(false);
   const [isLoaderExiting, setIsLoaderExiting] = useState(false);
   const [loaderProgress, setLoaderProgress] = useState(0);
@@ -195,6 +234,8 @@ export default function AppShell({
         setIsAdmin(false);
         setAdminCheckedFor(null);
         setChecking(false);
+        setThemePreference("ocean-navy");
+        setTextColor(DEFAULT_TEXT_COLOR);
         router.replace("/login");
         return;
       }
@@ -220,6 +261,103 @@ export default function AppShell({
   }, [router]);
 
   // ══════════════════════════════════════════════════════
+  // تحميل الثيم ولون النص المحفوظين في حساب المستخدم
+  // ══════════════════════════════════════════════════════
+
+  useEffect(() => {
+    const supabaseClient = getSupabase();
+
+    if (!supabaseClient) return;
+
+    const client = supabaseClient;
+    const userId = session?.user?.id;
+
+    if (!userId) return;
+
+    let active = true;
+
+    async function loadPreferences() {
+      const { data, error } = await client
+        .from("profiles")
+        .select("theme_preference, text_color")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!active) return;
+
+      if (error) {
+        console.error("Theme and text color loading error:", error);
+        return;
+      }
+
+      const savedTheme: unknown = data?.theme_preference;
+      const savedTextColor: unknown = data?.text_color;
+
+      setThemePreference(
+        isThemePreference(savedTheme) ? savedTheme : "ocean-navy"
+      );
+
+      setTextColor(
+        isTextColor(savedTextColor)
+          ? savedTextColor
+          : DEFAULT_TEXT_COLOR
+      );
+    }
+
+    void loadPreferences();
+
+    return () => {
+      active = false;
+    };
+  }, [session?.user?.id]);
+
+  // ══════════════════════════════════════════════════════
+  // تحديث الثيم مباشرة عند تغييره من الملف الشخصي
+  // ══════════════════════════════════════════════════════
+
+  useEffect(() => {
+    function handleThemeChange(event: Event) {
+      const customEvent = event as CustomEvent<unknown>;
+
+      if (isThemePreference(customEvent.detail)) {
+        setThemePreference(customEvent.detail);
+      }
+    }
+
+    window.addEventListener("maris-theme-change", handleThemeChange);
+
+    return () => {
+      window.removeEventListener("maris-theme-change", handleThemeChange);
+    };
+  }, []);
+
+  // ══════════════════════════════════════════════════════
+  // تحديث لون النص مباشرة عند تغييره من الملف الشخصي
+  // ══════════════════════════════════════════════════════
+
+  useEffect(() => {
+    function handleTextColorChange(event: Event) {
+      const customEvent = event as CustomEvent<unknown>;
+
+      if (isTextColor(customEvent.detail)) {
+        setTextColor(customEvent.detail);
+      }
+    }
+
+    window.addEventListener(
+      "maris-text-color-change",
+      handleTextColorChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        "maris-text-color-change",
+        handleTextColorChange
+      );
+    };
+  }, []);
+
+  // ══════════════════════════════════════════════════════
   // إعادة فحص الأدمن عند الرجوع للتطبيق
   // ══════════════════════════════════════════════════════
 
@@ -231,7 +369,6 @@ export default function AppShell({
     }
 
     const supabase = supabaseClient;
-    const userId = session.user.id;
 
     async function handleVisibilityChange() {
       if (document.visibilityState !== "visible") return;
@@ -245,6 +382,7 @@ export default function AppShell({
           setSession(null);
           setIsAdmin(false);
           setAdminCheckedFor(null);
+          setTextColor(DEFAULT_TEXT_COLOR);
           router.replace("/login");
           return;
         }
@@ -252,10 +390,13 @@ export default function AppShell({
         setSession(currentSession);
         setAdminCheckedFor(null);
 
-        const adminStatus = await checkAdmin(supabase, userId);
+        const adminStatus = await checkAdmin(
+          supabase,
+          currentSession.user.id
+        );
 
         setIsAdmin(adminStatus);
-        setAdminCheckedFor(userId);
+        setAdminCheckedFor(currentSession.user.id);
       } catch (error) {
         console.error("Admin refresh error:", error);
       }
@@ -288,7 +429,7 @@ export default function AppShell({
     }
   }, [session?.user?.id]);
 
-  // الشريط يتقدم حسب مراحل التهيئة
+  // تقدم شاشة التحميل
   useEffect(() => {
     const userId = session?.user?.id;
     if (!showCinematicLoader || !userId) return;
@@ -311,6 +452,7 @@ export default function AppShell({
     }, 35);
 
     let finishTimer: number | undefined;
+    let exitTimer: number | undefined;
 
     if (ready) {
       const minimumVisibleMs = 3600;
@@ -320,13 +462,14 @@ export default function AppShell({
       finishTimer = window.setTimeout(() => {
         setLoaderProgress(100);
         setLoaderMessage("كلش واجد، مرحبا بيك!");
-        window.setTimeout(() => setIsLoaderExiting(true), 1650);
+        exitTimer = window.setTimeout(() => setIsLoaderExiting(true), 1650);
       }, remaining);
     }
 
     return () => {
       window.clearInterval(progressTimer);
       if (finishTimer !== undefined) window.clearTimeout(finishTimer);
+      if (exitTimer !== undefined) window.clearTimeout(exitTimer);
     };
   }, [
     showCinematicLoader,
@@ -336,7 +479,7 @@ export default function AppShell({
     loaderStartedAt,
   ]);
 
-  // إزالة شاشة التحميل بعد تأثير الاختفاء
+  // إزالة شاشة التحميل
   useEffect(() => {
     if (!showCinematicLoader || !isLoaderExiting) return;
 
@@ -353,7 +496,7 @@ export default function AppShell({
     setMenuOpen(false);
   }, [pathname]);
 
-  // منع التمرير في الخلفية
+  // منع التمرير عند فتح القائمة
   useEffect(() => {
     if (!menuOpen) {
       document.body.style.overflow = "";
@@ -407,13 +550,26 @@ export default function AppShell({
     setSession(null);
     setIsAdmin(false);
     setAdminCheckedFor(null);
+    setThemePreference("ocean-navy");
+    setTextColor(DEFAULT_TEXT_COLOR);
     router.replace("/login");
   }
 
   return (
     <StreamPreviewProvider isAdmin={isAdmin}>
-      <div className="min-h-screen">
-        {/* TOP BAR */}
+      <div
+        className="relative min-h-screen"
+        data-maris-theme={themePreference}
+        style={{
+          backgroundImage: `linear-gradient(rgba(2, 11, 24, 0.28), rgba(2, 11, 24, 0.42)), url("${THEME_BACKGROUNDS[themePreference]}")`,
+          backgroundSize: "cover",
+          backgroundPosition: "center top",
+          backgroundRepeat: "no-repeat",
+          backgroundAttachment: "fixed",
+          backgroundColor: "#020b18",
+        }}
+      >
+        {/* الشريط العلوي */}
         <header className="sticky top-0 z-30 border-b border-white/5 bg-navy-950/85 backdrop-blur-xl">
           <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
             <button
@@ -439,9 +595,7 @@ export default function AppShell({
               className="flex items-center gap-2"
               aria-label="MARIS ACADEMY — الرئيسية"
             >
-              <span className="text-2xl" aria-hidden>
-                🌊
-              </span>
+              <span className="text-2xl" aria-hidden>🌊</span>
               <span className="font-grotesk text-xs font-bold leading-tight tracking-widest text-white sm:text-sm">
                 MARIS
                 <br />
@@ -452,7 +606,7 @@ export default function AppShell({
           </div>
         </header>
 
-        {/* الخلفية عند فتح القائمة */}
+        {/* خلفية إغلاق القائمة */}
         {menuOpen && (
           <button
             type="button"
@@ -479,9 +633,7 @@ export default function AppShell({
               onClick={() => setMenuOpen(false)}
               className="flex items-center gap-3"
             >
-              <span className="text-3xl" aria-hidden>
-                🌊
-              </span>
+              <span className="text-3xl" aria-hidden>🌊</span>
               <span className="font-grotesk text-sm font-bold leading-tight tracking-widest text-white">
                 MARIS
                 <br />
@@ -530,7 +682,6 @@ export default function AppShell({
 
               <div className="my-3 border-t border-white/5" />
 
-              {/* عن MARIS */}
               <Link
                 href={ABOUT_NAV_ITEM.href}
                 onClick={() => setMenuOpen(false)}
@@ -551,7 +702,6 @@ export default function AppShell({
                 )}
               </Link>
 
-              {/* أضف تقييمك */}
               <Link
                 href={REVIEW_NAV_ITEM.href}
                 onClick={() => setMenuOpen(false)}
@@ -572,7 +722,6 @@ export default function AppShell({
                 )}
               </Link>
 
-              {/* روابط الإدارة تظهر للأدمن فقط */}
               {isAdmin && (
                 <>
                   <div className="my-3 border-t border-white/5" />
@@ -607,24 +756,42 @@ export default function AppShell({
               onClick={handleSignOut}
               className="flex min-h-[50px] w-full items-center gap-4 rounded-2xl px-4 py-3 font-bold text-red-300/80 transition-colors hover:bg-red-500/10 hover:text-red-300"
             >
-              <span className="flex w-7 justify-center text-xl" aria-hidden>
-                🚪
-              </span>
+              <span className="flex w-7 justify-center text-xl" aria-hidden>🚪</span>
               تسجيل الخروج
             </button>
           </div>
         </aside>
 
-        <main className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+        {/* محتوى الصفحة مع لون النص المخصص */}
+        <main
+          className="px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-8"
+          data-maris-text-color={textColor}
+          style={
+            {
+              color: textColor,
+              "--maris-text-color": textColor,
+            } as React.CSSProperties
+          }
+        >
+          <style>{`
+            main[data-maris-text-color] :is(
+              [class~="text-foam"],
+              [class~="text-white"],
+              [class*="text-foam/"],
+              [class*="text-white/"]
+            ) {
+              color: var(--maris-text-color) !important;
+            }
+          `}</style>
+
           <div className="mx-auto w-full max-w-7xl">{children}</div>
         </main>
 
-        {/* الجولة التعريفية بعد التأكد من الصلاحيات واختفاء شاشة التحميل */}
         {!showCinematicLoader && adminCheckedFor === session.user.id && (
           <MarisTour userId={session.user.id} isAdmin={isAdmin} />
         )}
 
-        {/* شاشة تحميل سينمائية MARIS ACADEMY 2027 */}
+        {/* شاشة التحميل السينمائية */}
         {showCinematicLoader && (
           <div
             role="status"
@@ -638,11 +805,6 @@ export default function AppShell({
             }`}
           >
             <style>{`
-              @keyframes maris-loader-glow {
-                0%, 100% { opacity: .55; }
-                50% { opacity: 1; }
-              }
-
               @keyframes maris-loader-shimmer {
                 from { transform: translateX(-120%); }
                 to { transform: translateX(260%); }
@@ -661,7 +823,6 @@ export default function AppShell({
             />
 
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020817]/70 via-[#031126]/10 to-[#020817]/15" />
-
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_42%,rgba(8,145,178,0.16),transparent_45%)]" />
 
             <div className="pointer-events-none absolute inset-x-0 top-[17%] z-10 flex flex-col items-center px-4 text-center sm:top-[15%]">

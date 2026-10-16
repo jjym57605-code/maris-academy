@@ -137,43 +137,49 @@ export default function AboutPage() {
           }}
         />
       </div>
-
+      
       {/* Navigation */}
       <header className="relative z-10 border-b border-white/[0.07] bg-[#06111f]/75 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <Link href="/" className="group flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.09] text-2xl transition-transform duration-300 group-hover:scale-105">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-3 py-3 min-[380px]:px-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-8 sm:py-4">
+          <Link
+            href="/"
+            className="group flex min-w-0 items-center justify-center gap-2 sm:justify-start sm:gap-3"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-300/[0.09] text-xl transition-transform duration-300 group-hover:scale-105 sm:h-11 sm:w-11 sm:rounded-2xl sm:text-2xl">
               🌊
             </div>
 
-            <div>
-              <p className="text-base font-black tracking-wide text-white">
+            <div className="min-w-0">
+              <p className="whitespace-nowrap text-sm font-black tracking-wide text-white min-[380px]:text-base">
                 MARIS <span className="text-cyan-300">ACADEMY</span>
               </p>
-              <p className="text-[10px] font-bold tracking-[0.22em] text-white/35">
+              <p className="text-[9px] font-bold tracking-[0.18em] text-white/35 sm:text-[10px] sm:tracking-[0.22em]">
                 BAC 2027
               </p>
             </div>
           </Link>
 
-          <nav className="flex items-center gap-2 sm:gap-3">
+          <nav
+            aria-label="التنقل الرئيسي"
+            className="grid w-full grid-cols-3 gap-1.5 sm:flex sm:w-auto sm:shrink-0 sm:items-center sm:gap-2"
+          >
             <Link
               href="/"
-              className="hidden rounded-xl px-4 py-2.5 text-sm font-bold text-white/65 transition hover:bg-white/5 hover:text-cyan-200 sm:inline-flex"
+              className="flex min-w-0 items-center justify-center rounded-lg border border-white/10 px-1 py-2 text-center text-[10px] font-bold leading-tight text-white/75 transition hover:bg-white/5 hover:text-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:border-transparent sm:px-3 sm:py-2.5 sm:text-sm"
             >
-              الرئيسية
+              الصفحة الرئيسية
             </Link>
 
             <Link
               href="/login"
-              className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-white/75 transition hover:border-cyan-300/30 hover:text-white"
+              className="flex min-w-0 items-center justify-center rounded-lg border border-white/10 px-1 py-2 text-center text-[10px] font-bold leading-tight text-white/75 transition hover:border-cyan-300/30 hover:text-white min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
             >
               تسجيل الدخول
             </Link>
 
             <Link
               href="/register"
-              className="rounded-xl bg-cyan-300 px-4 py-2.5 text-sm font-black text-[#06111f] shadow-[0_0_25px_rgba(103,232,249,0.12)] transition hover:-translate-y-0.5 hover:bg-cyan-200"
+              className="flex min-w-0 items-center justify-center rounded-lg bg-cyan-300 px-1 py-2 text-center text-[10px] font-black leading-tight text-[#06111f] shadow-[0_0_25px_rgba(103,232,249,0.12)] transition hover:-translate-y-0.5 hover:bg-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
             >
               انضم إلينا
             </Link>

@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
@@ -96,6 +95,22 @@ function isActive(pathname: string, href: string) {
 }
 
 // ══════════════════════════════════════════════════════
+// فقاعات التنقّل — توقيت وسرعة مختلفان لكل فقاعة
+// ══════════════════════════════════════════════════════
+
+const NAVIGATION_BUBBLES = Array.from(
+  { length: 24 },
+  (_, index) => ({
+    id: index,
+    left: `${(index * 41 + 13) % 100}%`,
+    size: `${10 + ((index * 17 + 7) % 27)}px`,
+    duration: `${3 + ((index * 19 + 5) % 21) / 10}s`,
+    delay: `${((index * 23 + 11) % 16) / 10}s`,
+    drift: `${((index * 31) % 81) - 40}px`,
+  })
+);
+
+// ══════════════════════════════════════════════════════
 // فحص صلاحية الأدمن
 // ══════════════════════════════════════════════════════
 
@@ -148,8 +163,12 @@ export default function AppShell({
   const [adminCheckedFor, setAdminCheckedFor] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // فقاعات تظهر فقط عند الانتقال إلى صفحة أخرى
+  const [showNavigationBubbles, setShowNavigationBubbles] = useState(false);
+  const previousPathname = useRef<string | null>(null);
+  const navigationBubbleTimer = useRef<number | null>(null);
+
   // الثيم المحفوظ في حساب المستخدم
-  // string يسمح بمعرّفات الخلفيات الجديدة من قاعدة البيانات
   const [themePreference, setThemePreference] =
     useState<string>("ocean-navy");
 
@@ -167,6 +186,55 @@ export default function AppShell({
   const [loaderProgress, setLoaderProgress] = useState(0);
   const [loaderMessage, setLoaderMessage] = useState("نوجدو فضاءك الدراسي...");
   const [loaderStartedAt, setLoaderStartedAt] = useState(0);
+
+  // ══════════════════════════════════════════════════════
+  // فقاعات تظهر عند تغيير الصفحة فقط
+  // ══════════════════════════════════════════════════════
+
+  useEffect(() => {
+    // لا نظهر الفقاعات عند أول تحميل للتطبيق
+    if (previousPathname.current === null) {
+      previousPathname.current = pathname;
+      return;
+    }
+
+    if (previousPathname.current === pathname) {
+      return;
+    }
+
+    previousPathname.current = pathname;
+
+    // لا نشغّل التأثير إذا كان المستخدم يفضّل تقليل الحركة
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+    if (reducedMotion) {
+      setShowNavigationBubbles(false);
+      return;
+    }
+
+    setShowNavigationBubbles(true);
+
+    if (navigationBubbleTimer.current !== null) {
+      window.clearTimeout(navigationBubbleTimer.current);
+    }
+
+    // نخلي وقت كافي باش تكمل حتى آخر الفقاعات صعودها
+    navigationBubbleTimer.current = window.setTimeout(() => {
+      setShowNavigationBubbles(false);
+      navigationBubbleTimer.current = null;
+    }, 7000);
+  }, [pathname]);
+
+  // تنظيف المؤقت عند مغادرة المكوّن
+  useEffect(() => {
+    return () => {
+      if (navigationBubbleTimer.current !== null) {
+        window.clearTimeout(navigationBubbleTimer.current);
+      }
+    };
+  }, []);
 
   // ══════════════════════════════════════════════════════
   // المصادقة
@@ -290,12 +358,10 @@ export default function AppShell({
     let active = true;
 
     async function loadPreferences() {
-      // نبدأ بالخلفيات القديمة حتى تبقى متاحة دائمًا
       const availableBackgrounds: Record<string, string> = {
         ...DEFAULT_THEME_BACKGROUNDS,
       };
 
-      // تحميل الخلفيات المفعّلة التي أضافها الأدمن
       const {
         data: backgroundsData,
         error: backgroundsError,
@@ -308,7 +374,6 @@ export default function AppShell({
       if (!active) return;
 
       if (backgroundsError) {
-        // إذا تعذّر تحميل الخلفيات الجديدة، تبقى القديمة شغّالة
         console.error(
           "Theme backgrounds loading error:",
           backgroundsError
@@ -331,7 +396,6 @@ export default function AppShell({
 
       setThemeBackgrounds(availableBackgrounds);
 
-      // تحميل تفضيلات المستخدم
       const { data, error } = await client
         .from("profiles")
         .select("theme_preference, text_color")
@@ -348,7 +412,6 @@ export default function AppShell({
       const savedTheme: unknown = data?.theme_preference;
       const savedTextColor: unknown = data?.text_color;
 
-      // استعمال الخلفية المحفوظة إذا كانت قديمة أو ما زالت مفعّلة
       setThemePreference(
         isThemePreference(savedTheme) &&
           Object.prototype.hasOwnProperty.call(
@@ -639,6 +702,110 @@ export default function AppShell({
           backgroundColor: "#020b18",
         }}
       >
+        {/* تأثير فقاعات التنقّل */}
+        {showNavigationBubbles && !showCinematicLoader && (
+          <div
+            className="maris-navigation-bubbles"
+            aria-hidden="true"
+          >
+            <style>{`
+              .maris-navigation-bubbles {
+                position: fixed;
+                inset: 0;
+                z-index: 60;
+                overflow: hidden;
+                pointer-events: none;
+                contain: strict;
+              }
+
+              .maris-navigation-bubble {
+                position: absolute;
+                bottom: -70px;
+                left: var(--bubble-left);
+                display: block;
+                width: var(--bubble-size);
+                height: var(--bubble-size);
+                border: 1px solid rgba(165, 243, 252, 0.72);
+                border-radius: 50%;
+                background:
+                  radial-gradient(
+                    circle at 32% 25%,
+                    rgba(255, 255, 255, 0.95) 0%,
+                    rgba(207, 250, 254, 0.48) 12%,
+                    rgba(34, 211, 238, 0.13) 43%,
+                    rgba(8, 145, 178, 0.04) 72%
+                  );
+                box-shadow:
+                  inset -3px -4px 8px rgba(34, 211, 238, 0.08),
+                  0 0 12px rgba(34, 211, 238, 0.12);
+                opacity: 0;
+                will-change: transform, opacity;
+                animation: maris-bubble-rise
+                  var(--bubble-duration)
+                  linear
+                  var(--bubble-delay)
+                  both;
+              }
+
+              @keyframes maris-bubble-rise {
+                0% {
+                  opacity: 0;
+                  transform: translate3d(0, 0, 0) scale(0.65);
+                }
+
+                10% {
+                  opacity: 0.78;
+                }
+
+                32% {
+                  opacity: 0.88;
+                }
+
+                72% {
+                  opacity: 0.68;
+                }
+
+                100% {
+                  opacity: 0;
+                  transform: translate3d(
+                    var(--bubble-drift),
+                    -115vh,
+                    0
+                  ) scale(1.1);
+                }
+              }
+
+              @media (max-width: 640px) {
+                .maris-navigation-bubble {
+                  box-shadow: 0 0 8px rgba(34, 211, 238, 0.1);
+                }
+              }
+
+              @media (prefers-reduced-motion: reduce) {
+                .maris-navigation-bubbles {
+                  display: none !important;
+                }
+              }
+            `}</style>
+
+            {NAVIGATION_BUBBLES.map((bubble) => (
+              <span
+                key={bubble.id}
+                className="maris-navigation-bubble"
+                style={
+                  {
+                    "--bubble-left": bubble.left,
+                    "--bubble-size": bubble.size,
+                    "--bubble-duration": bubble.duration,
+                    "--bubble-delay": bubble.delay,
+                    "--bubble-drift": bubble.drift,
+                  } as React.CSSProperties
+                }
+              />
+            ))}
+          </div>
+        )}
+
         {/* الشريط العلوي */}
         <header className="sticky top-0 z-30 border-b border-white/5 bg-navy-950/85 backdrop-blur-xl">
           <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">

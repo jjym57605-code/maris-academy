@@ -324,10 +324,10 @@ export default function DashboardPage() {
         {/* ANNOUNCEMENTS */}
         <section data-tour="dashboard-announcements">
           <div className="mb-4">
-            <h2 className="text-xl font-black text-slate-900">
+            <h2 className="text-2xl font-black text-white">
               📢 آخر الإعلانات
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-400">
               أهم الأخبار والتحديثات من MARIS ACADEMY
             </p>
           </div>
@@ -338,7 +338,7 @@ export default function DashboardPage() {
               <p className="mt-3 font-bold text-slate-200">
                 لا توجد إعلانات حاليًا
               </p>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-400">
                 سنضع هنا آخر أخبار الأكاديمية.
               </p>
             </div>
@@ -371,18 +371,18 @@ export default function DashboardPage() {
                               : "📢 عام"}
                       </span>
 
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-slate-400">
                         {new Date(
                           announcement.created_at
                         ).toLocaleDateString("ar-DZ")}
                       </span>
                     </div>
 
-                    <h3 className="mt-4 text-lg font-black leading-8 text-slate-900">
+                    <h3 className="mt-4 text-xl font-black leading-8 text-white">
                       {String(announcement.title)}
                     </h3>
 
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-600">
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-300">
                       {String(announcement.content)}
                     </p>
                   </div>
@@ -395,10 +395,10 @@ export default function DashboardPage() {
         {/* NEXT LESSON */}
         <section data-tour="dashboard-next-lesson">
           <div className="mb-4">
-            <h2 className="text-xl font-black text-slate-900">
+            <h2 className="text-2xl font-black text-white">
               🎯 تابع من حيث توقفت
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-400">
               الدرس التالي المقترح لك
             </p>
           </div>
@@ -438,7 +438,7 @@ export default function DashboardPage() {
               <h3 className="mt-3 font-black text-slate-200">
                 لا يوجد درس مقترح حاليًا
               </h3>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="mt-2 text-sm text-slate-400">
                 يمكنك اختيار دورة والبدء في التعلم.
               </p>
               <Link
@@ -455,17 +455,17 @@ export default function DashboardPage() {
         <section data-tour="dashboard-courses">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
-              <h2 className="text-xl font-black text-slate-900">
+              <h2 className="text-2xl font-black text-white">
                 📚 دوراتك
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-400">
                 تابع تقدمك في الدورات التعليمية
               </p>
             </div>
 
             <Link
               href="/courses"
-              className="text-sm font-bold text-cyan-700 transition hover:text-cyan-800"
+              className="text-sm font-bold text-cyan-300 transition hover:text-cyan-200"
             >
               عرض الكل →
             </Link>
@@ -512,20 +512,20 @@ export default function DashboardPage() {
                         </span>
                       </div>
 
-                      <h3 className="mt-5 line-clamp-2 text-lg font-black leading-8 text-slate-900 transition group-hover:text-cyan-700">
+                      <h3 className="mt-5 line-clamp-2 text-xl font-black leading-8 text-white transition group-hover:text-cyan-300">
                         {String(course.title)}
                       </h3>
 
                       {course.description && (
-                        <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                        <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">
                           {String(course.description)}
                         </p>
                       )}
 
                       <div className="mt-5">
                         <div className="mb-2 flex items-center justify-between text-xs">
-                          <span className="text-slate-500">التقدم</span>
-                          <span className="font-bold text-slate-700">
+                          <span className="text-slate-400">التقدم</span>
+                          <span className="font-bold text-slate-200">
                             {completed}/{total}
                           </span>
                         </div>
@@ -539,10 +539,10 @@ export default function DashboardPage() {
                       </div>
 
                       <div className="mt-5 flex items-center justify-between text-sm font-bold">
-                        <span className="text-slate-500">
+                        <span className="text-slate-400">
                           فتح الدورة
                         </span>
-                        <span className="text-cyan-700 transition group-hover:translate-x-1">
+                        <span className="text-cyan-300 transition group-hover:translate-x-1">
                           →
                         </span>
                       </div>
@@ -557,10 +557,10 @@ export default function DashboardPage() {
         {/* QUICK ACTIONS */}
         <section data-tour="dashboard-quick-links">
           <div className="mb-4">
-            <h2 className="text-xl font-black text-slate-900">
+            <h2 className="text-2xl font-black text-white">
               ⚡ الوصول السريع
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-slate-400">
               أهم أقسام MARIS ACADEMY في مكان واحد
             </p>
           </div>
@@ -576,7 +576,7 @@ export default function DashboardPage() {
                   {item.icon}
                 </div>
 
-                <h3 className="mt-4 font-black text-white transition group-hover:text-cyan-300">
+                <h3 className="mt-4 text-lg font-black text-white transition group-hover:text-cyan-300">
                   {item.title}
                 </h3>
 
@@ -596,7 +596,7 @@ export default function DashboardPage() {
                     👑
                   </div>
 
-                  <h3 className="mt-4 font-black text-white transition group-hover:text-purple-300">
+                  <h3 className="mt-4 text-lg font-black text-white transition group-hover:text-purple-300">
                     لوحة الإدارة
                   </h3>
 
@@ -613,7 +613,7 @@ export default function DashboardPage() {
                     🎓
                   </div>
 
-                  <h3 className="mt-4 font-black text-white transition group-hover:text-amber-300">
+                  <h3 className="mt-4 text-lg font-black text-white transition group-hover:text-amber-300">
                     طلبات الأساتذة
                   </h3>
 

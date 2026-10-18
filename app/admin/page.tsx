@@ -409,6 +409,20 @@ export default function AdminPage() {
               title="إدارة الاختبارات"
             />
 
+            {/* MARIS ARENA */}
+            <QuickAction
+              href="/admin/arena"
+              icon="🐋"
+              title="إدارة MARIS ARENA"
+            />
+
+            {/* MARIS ARENA PRO CHALLENGES */}
+            <QuickAction
+              href="/admin/arena/challenges"
+              icon="🏆"
+              title="إدارة تحديات MARIS ARENA PRO"
+            />
+
             <QuickAction
               href="/admin/students"
               icon="👥"

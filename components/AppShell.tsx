@@ -27,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/library", icon: "📖", label: "مكتبة الدروس" },
   { href: "/flashcards", icon: "🧠", label: "حفظني" },
   { href: "/quizzes", icon: "📝", label: "الاختبارات" },
+  { href: "/arena", icon: "⚔️", label: "ساحة التحديات" },
   { href: "/forum", icon: "💬", label: "المنتدى" },
   { href: "/progress", icon: "📊", label: "تقدمي" },
   { href: "/leaderboard", icon: "🏆", label: "الترتيب" },

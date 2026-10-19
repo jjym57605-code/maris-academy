@@ -198,6 +198,10 @@ export default function StudySessionsPage() {
   const [totalSeconds, setTotalSeconds] = useState(0);
 
   const [room, setRoom] = useState<StudyRoom | null>(null);
+  const [roomStats, setRoomStats] = useState<{
+  participant_count: number;
+  total_study_seconds: number;
+} | null>(null);
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [roomBusy, setRoomBusy] = useState(false);
   const [showRooms, setShowRooms] = useState(false);
@@ -352,9 +356,30 @@ export default function StudySessionsPage() {
             .eq("id", active.room_id)
             .maybeSingle();
 
-          if (roomData) {
-            setRoom(roomData as StudyRoom);
-          }
+         if (roomData) {
+  const currentRoom = roomData as StudyRoom;
+  setRoom(currentRoom);
+
+  const { data: statsData, error: statsError } = await supabase.rpc(
+    "get_study_room_stats",
+    { p_room_id: currentRoom.id }
+  );
+
+  if (statsError) throw statsError;
+
+  const stats = Array.isArray(statsData) ? statsData[0] : statsData;
+
+  setRoomStats(
+    stats
+      ? {
+          participant_count: Number(stats.participant_count ?? 0),
+          total_study_seconds: Number(stats.total_study_seconds ?? 0),
+        }
+      : { participant_count: 0, total_study_seconds: 0 }
+  );
+} else {
+  setRoomStats(null);
+}
         } else {
           setRoom(null);
         }
@@ -792,6 +817,23 @@ export default function StudySessionsPage() {
       if (sessionError) throw sessionError;
 
       setRoom(roomData as StudyRoom);
+      const { data: statsData, error: statsError } = await supabase.rpc(
+  "get_study_room_stats",
+  { p_room_id: roomData.id }
+);
+
+if (statsError) throw statsError;
+
+const stats = Array.isArray(statsData) ? statsData[0] : statsData;
+
+setRoomStats(
+  stats
+    ? {
+        participant_count: Number(stats.participant_count ?? 0),
+        total_study_seconds: Number(stats.total_study_seconds ?? 0),
+      }
+    : { participant_count: 0, total_study_seconds: 0 }
+);
       setSession(sessionData as StudySession);
       setSessionType(sessionData.session_type);
       setStudySeconds(sessionData.study_seconds);
@@ -863,6 +905,23 @@ export default function StudySessionsPage() {
       const joinedSession = sessionData as StudySession;
 
       setRoom(roomData as StudyRoom);
+      const { data: statsData, error: statsError } = await supabase.rpc(
+  "get_study_room_stats",
+  { p_room_id: roomData.id }
+);
+
+if (statsError) throw statsError;
+
+const stats = Array.isArray(statsData) ? statsData[0] : statsData;
+
+setRoomStats(
+  stats
+    ? {
+        participant_count: Number(stats.participant_count ?? 0),
+        total_study_seconds: Number(stats.total_study_seconds ?? 0),
+      }
+    : { participant_count: 0, total_study_seconds: 0 }
+);
       setSession(joinedSession);
       setSubjectId(joinedSession.subject_id ?? "");
       setSessionType(joinedSession.session_type);
@@ -1084,6 +1143,7 @@ export default function StudySessionsPage() {
           </div>
         </section>
 
+  
         {/* الغرف الجماعية */}
         <section className="mb-6 rounded-3xl border border-cyan-300/15 bg-[#020617]/65 p-4 backdrop-blur-xl sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1091,7 +1151,9 @@ export default function StudySessionsPage() {
               <p className="text-xs font-black tracking-widest text-cyan-300">
                 MARIS GROUP STUDY
               </p>
-              <h2 className="mt-2 text-xl font-black">المراجعة مع الأصدقاء</h2>
+              <h2 className="mt-2 text-xl font-black">
+                المراجعة مع الأصدقاء
+              </h2>
               <p className="mt-2 text-sm leading-6 text-white/50">
                 كل طالب عنده مؤقّت وحساب وقت مستقل، حتى داخل نفس الغرفة.
               </p>
@@ -1112,53 +1174,99 @@ export default function StudySessionsPage() {
                 <div>
                   <p className="text-xs text-white/50">الغرفة الحالية</p>
                   <p className="mt-1 text-lg font-black">
-                    {room.status === "active" ? "🌊 غرفة نشطة" : "🔒 غرفة مغلقة"}
+                    {room.status === "active"
+                      ? "🌊 غرفة نشطة"
+                      : "🔒 غرفة مغلقة"}
                   </p>
                 </div>
+
                 <span className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70">
-                  {room.status === "active" ? "متاحة للانضمام" : "الانضمام مغلق"}
+                  {room.status === "active"
+                    ? "متاحة للانضمام"
+                    : "الانضمام مغلق"}
                 </span>
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-xl bg-black/20 p-3">
-                  <p className="text-xs text-white/45">كود الدعوة</p>
-                  <p dir="ltr" className="mt-1 break-all text-xl font-black tracking-widest text-cyan-200">
-                    {room.invite_code}
+                  <p className="text-xs text-white/45">
+                    👥 عدد المشاركين
+                  </p>
+                  <p className="mt-1 text-xl font-black text-cyan-200">
+                    {roomStats?.participant_count ?? 0}
                   </p>
                 </div>
+
                 <div className="rounded-xl bg-black/20 p-3">
-                  <p className="text-xs text-white/45">وقت دراستك الشخصي</p>
+                  <p className="text-xs text-white/45">
+                    ⏱️ مجموع وقت الدراسة
+                  </p>
+                  <p className="mt-1 text-xl font-black text-cyan-200">
+                    {Math.floor(
+                      (roomStats?.total_study_seconds ?? 0) / 3600
+                    )}{" "}
+                    ساعة{" "}
+                    {Math.floor(
+                      ((roomStats?.total_study_seconds ?? 0) % 3600) / 60
+                    )}{" "}
+                    دقيقة
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-black/20 p-3">
+                  <p className="text-xs text-white/45">
+                    وقت دراستك الشخصي
+                  </p>
                   <p className="mt-1 text-xl font-black">
                     {formatHours(studySeconds)}
                   </p>
                 </div>
-              </div>
 
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => void shareRoom()}
-                  className="min-h-11 flex-1 rounded-xl px-4 py-3 text-sm font-black text-slate-950"
-                  style={{ backgroundColor: theme.accent }}
-                >
-                  ↗ مشاركة رابط الدعوة
-                </button>
-
-                {room.host_user_id === userId && room.status === "active" && (
-                  <button
-                    type="button"
-                    disabled={roomBusy}
-                    onClick={() => void closeRoom()}
-                    className="min-h-11 rounded-xl border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-sm font-bold text-rose-100 disabled:opacity-50"
-                  >
-                    {roomBusy ? "جارٍ التنفيذ..." : "إغلاق الغرفة"}
-                  </button>
+                {room.host_user_id === userId && (
+                  <div className="rounded-xl bg-black/20 p-3 sm:col-span-2">
+                    <p className="text-xs text-white/45">
+                      كود الدعوة الخاص بغرفتك
+                    </p>
+                    <p
+                      dir="ltr"
+                      className="mt-1 break-all text-xl font-black tracking-widest text-cyan-200"
+                    >
+                      {room.invite_code}
+                    </p>
+                  </div>
                 )}
               </div>
 
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                {room.host_user_id === userId && (
+                  <button
+                    type="button"
+                    onClick={() => void shareRoom()}
+                    className="min-h-11 flex-1 rounded-xl px-4 py-3 text-sm font-black text-slate-950"
+                    style={{ backgroundColor: theme.accent }}
+                  >
+                    🔗 مشاركة رابط الدعوة
+                  </button>
+                )}
+
+                {room.host_user_id === userId &&
+                  room.status === "active" && (
+                    <button
+                      type="button"
+                      disabled={roomBusy}
+                      onClick={() => void closeRoom()}
+                      className="min-h-11 rounded-xl border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-sm font-bold text-rose-100 disabled:opacity-50"
+                    >
+                      {roomBusy
+                        ? "جارٍ التنفيذ..."
+                        : "إغلاق الغرفة"}
+                    </button>
+                  )}
+              </div>
+
               <p className="mt-3 text-xs leading-6 text-white/45">
-                إغلاق الغرفة يمنع الانضمام الجديد؛ لا يغلق جلسات الأعضاء الشخصية ولا يدمج أوقاتهم.
+                إغلاق الغرفة يمنع الانضمام الجديد؛ لا يغلق جلسات الأعضاء
+                الشخصية ولا يدمج أوقاتهم.
               </p>
             </div>
           )}
@@ -1169,8 +1277,10 @@ export default function StudySessionsPage() {
                 <span className="text-2xl">✨</span>
                 <h3 className="mt-2 font-black">أنشئ غرفة جديدة</h3>
                 <p className="mt-2 text-sm leading-6 text-white/50">
-                  أنشئ غرفة وشارك رابطها مع أصدقائك. يتم إنشاء جلسة شخصية لك تلقائيًا.
+                  أنشئ غرفة وشارك رابطها مع أصدقائك. يتم إنشاء جلسة شخصية
+                  لك تلقائيًا.
                 </p>
+
                 <button
                   type="button"
                   disabled={roomBusy || Boolean(session)}
@@ -1178,8 +1288,11 @@ export default function StudySessionsPage() {
                   className="mt-4 min-h-11 w-full rounded-xl px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ backgroundColor: theme.accent }}
                 >
-                  {roomBusy ? "جارٍ إنشاء الغرفة..." : "＋ إنشاء غرفة"}
+                  {roomBusy
+                    ? "جارٍ إنشاء الغرفة..."
+                    : "＋ إنشاء غرفة"}
                 </button>
+
                 {session && (
                   <p className="mt-2 text-xs leading-5 text-amber-200/70">
                     أنهِ جلستك الحالية أولًا لإنشاء غرفة أخرى.
@@ -1189,16 +1302,23 @@ export default function StudySessionsPage() {
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
                 <span className="text-2xl">🤝</span>
-                <h3 className="mt-2 font-black">انضم لغرفة صديقك</h3>
+                <h3 className="mt-2 font-black">
+                  انضم لغرفة صديقك
+                </h3>
                 <p className="mt-2 text-sm leading-6 text-white/50">
                   الصق كود الدعوة أو افتح رابط الغرفة الذي أرسله لك صديقك.
                 </p>
+
                 <label className="mt-4 block">
-                  <span className="mb-2 block text-xs text-white/50">كود الدعوة</span>
+                  <span className="mb-2 block text-xs text-white/50">
+                    كود الدعوة
+                  </span>
                   <input
                     value={inviteCodeInput}
                     onChange={(event) =>
-                      setInviteCodeInput(normalizeInviteCode(event.target.value))
+                      setInviteCodeInput(
+                        normalizeInviteCode(event.target.value)
+                      )
                     }
                     placeholder="مثال: A1B2C3D4"
                     dir="ltr"
@@ -1206,14 +1326,18 @@ export default function StudySessionsPage() {
                     className="min-h-12 w-full rounded-xl border border-white/10 bg-[#071426] px-4 py-3 text-center font-mono font-black tracking-widest text-white outline-none focus:border-cyan-300/50"
                   />
                 </label>
+
                 <button
                   type="button"
                   disabled={roomBusy || Boolean(session)}
                   onClick={() => void joinRoom()}
                   className="mt-3 min-h-11 w-full rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {roomBusy ? "جارٍ الانضمام..." : "انضم للغرفة"}
+                  {roomBusy
+                    ? "جارٍ الانضمام..."
+                    : "انضم للغرفة"}
                 </button>
+
                 {session && (
                   <p className="mt-2 text-xs leading-5 text-amber-200/70">
                     أنهِ جلستك الحالية قبل الانضمام لغرفة أخرى.
@@ -1223,6 +1347,7 @@ export default function StudySessionsPage() {
             </div>
           )}
         </section>
+
 
         {/* ترتيب الطلبة المستقل عن XP */}
         <section className="mb-6 rounded-3xl border border-white/10 bg-[#020617]/65 p-4 backdrop-blur-xl sm:p-6">

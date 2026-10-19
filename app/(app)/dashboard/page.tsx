@@ -73,6 +73,14 @@ const QUICK_LINKS = [
     iconBorder: "border-emerald-400/20",
   },
   {
+    href: "/study-sessions",
+    icon: "⏱️",
+    title: "جلسات الدراسة",
+    description: "نظّم وقت مراجعتك وتابع جلساتك",
+    accent: "from-sky-500/15 to-cyan-500/5",
+    iconBorder: "border-sky-400/20",
+  },
+  {
     href: "/leaderboard",
     icon: "🏆",
     title: "الترتيب",

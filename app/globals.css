@@ -9,11 +9,13 @@
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   @apply bg-navy-950 text-foam font-tajawal antialiased;
   min-height: 100vh;
+  overflow-x: clip;
 }
 
 ::selection {
@@ -124,5 +126,143 @@ body {
     z-index: -1;
     pointer-events: none;
     background: rgba(2, 11, 24, 0.38);
+  }
+
+  /* تصغير المساحات العامة دون التأثير على الكمبيوتر */
+  main {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    padding-top: 1rem;
+    padding-bottom: 1.5rem;
+  }
+
+  /* العناوين */
+  .page-title {
+    font-size: 1.25rem;
+    line-height: 1.6;
+  }
+
+  /* البطاقات المشتركة */
+  .glass-card {
+    border-radius: 1.125rem;
+  }
+
+  /* الأزرار: أصغر مع بقاء مساحة لمس مناسبة */
+  .btn-primary,
+  .btn-secondary {
+    gap: 0.375rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.875rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* حقول الإدخال */
+  .input-field {
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.875rem;
+    font-size: 0.9375rem;
+  }
+
+  /* الشارات */
+  .badge {
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  /* منع العناصر ذات الكلمات الطويلة من توسيع الشاشة */
+  main,
+  main > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* تقليل التمرير الأفقي داخل الجداول */
+  main table {
+    max-width: 100%;
+  }
+
+  /* شريط التمرير */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* الهواتف الصغيرة */
+@media (max-width: 380px) {
+  main {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .page-title {
+    font-size: 1.125rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.8125rem;
+  }
+}
+
+/* احترام إعداد تقليل الحركة */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* MARIS ACADEMY — تحسين عام للهاتف فقط */
+@media (max-width: 640px) {
+  /* منع المحتوى من فرض عرض أكبر من الشاشة */
+  main,
+  main > div,
+  main section,
+  main article {
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  /* تصغير المسافات داخل البطاقات المشتركة */
+  .glass-card {
+    padding: clamp(0.75rem, 3vw, 1rem);
+    border-radius: 1rem;
+  }
+
+  /* ضبط أحجام النصوص الكبيرة داخل المحتوى */
+  main h1 {
+    font-size: clamp(1.2rem, 4.5vw, 1.6rem);
+    line-height: 1.45;
+  }
+
+  main h2 {
+    font-size: clamp(1.05rem, 4vw, 1.35rem);
+    line-height: 1.5;
+  }
+
+  /* تصغير الأيقونات والصور الزخرفية فقط */
+  main svg {
+    max-width: 100%;
+    flex-shrink: 1;
+  }
+
+  /* منع الجداول من توسيع الشاشة */
+  main table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* السماح لعناصر التخطيط بالالتفاف */
+  main .flex {
+    min-width: 0;
+  }
+
+  main img,
+  main video {
+    max-width: 100%;
   }
 }

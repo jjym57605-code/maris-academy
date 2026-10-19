@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { href: "/flashcards", icon: "🧠", label: "حفظني" },
   { href: "/quizzes", icon: "📝", label: "الاختبارات" },
   { href: "/arena", icon: "⚔️", label: "ساحة التحديات" },
+  { href: "/study-sessions", icon: "⏱️", label: "الجلسات الدراسية" },
   { href: "/forum", icon: "💬", label: "المنتدى" },
   { href: "/progress", icon: "📊", label: "تقدمي" },
   { href: "/leaderboard", icon: "🏆", label: "الترتيب" },

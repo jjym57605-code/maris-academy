@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -204,6 +205,54 @@ export default function LandingPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
 
+  const [visitors, setVisitors] = useState<number | null>(null);
+  const [students, setStudents] = useState<number | null>(null);
+
+  // جلب عدد الزوار والطلاب المسجلين من API
+  useEffect(() => {
+    let active = true;
+
+    async function loadVisitors() {
+      try {
+        const response = await fetch("/api/visitors", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          console.error(
+            "Failed to load homepage statistics:",
+            response.status,
+          );
+          return;
+        }
+
+        const data: {
+          visitors?: number;
+          students?: number;
+        } = await response.json();
+
+        if (!active) return;
+
+        if (typeof data.visitors === "number") {
+          setVisitors(data.visitors);
+        }
+
+        if (typeof data.students === "number") {
+          setStudents(data.students);
+        }
+      } catch (error) {
+        console.error("Error loading homepage statistics:", error);
+      }
+    }
+
+    void loadVisitors();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // جلب آراء الطلبة الموافق على نشرها
   useEffect(() => {
     let active = true;
 
@@ -277,53 +326,52 @@ export default function LandingPage() {
 
         {/* الترويسة */}
         <header className="relative z-20 border-b border-white/[0.07] bg-[#061321]/80 backdrop-blur-xl">
-<nav
-  aria-label="التنقل الرئيسي"
-  className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4 lg:px-8"
->
-  <Link
-    href="/"
-    aria-label="MARIS ACADEMY الصفحة الرئيسية"
-    className="flex min-w-0 items-center justify-center gap-2.5 sm:justify-start"
-  >
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-gradient-to-br from-cyan-400/20 to-blue-500/10 text-xl shadow-lg shadow-cyan-500/5 sm:h-11 sm:w-11 sm:rounded-2xl sm:text-2xl">
-      🌊
-    </span>
+          <nav
+            aria-label="التنقل الرئيسي"
+            className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4 lg:px-8"
+          >
+            <Link
+              href="/"
+              aria-label="MARIS ACADEMY الصفحة الرئيسية"
+              className="flex min-w-0 items-center justify-center gap-2.5 sm:justify-start"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-gradient-to-br from-cyan-400/20 to-blue-500/10 text-xl shadow-lg shadow-cyan-500/5 sm:h-11 sm:w-11 sm:rounded-2xl sm:text-2xl">
+                🌊
+              </span>
 
-    <span className="min-w-0 leading-tight">
-      <span className="block whitespace-nowrap font-grotesk text-xs font-extrabold tracking-wide min-[380px]:text-sm sm:text-base">
-        MARIS ACADEMY
-      </span>
-      <span className="mt-1 block text-[9px] font-bold tracking-[0.2em] text-cyan-300 min-[380px]:text-[10px] sm:text-xs sm:tracking-[0.28em]">
-        CLASS OF 2027
-      </span>
-    </span>
-  </Link>
+              <span className="min-w-0 leading-tight">
+                <span className="block whitespace-nowrap font-grotesk text-xs font-extrabold tracking-wide min-[380px]:text-sm sm:text-base">
+                  MARIS ACADEMY
+                </span>
+                <span className="mt-1 block text-[9px] font-bold tracking-[0.2em] text-cyan-300 min-[380px]:text-[10px] sm:text-xs sm:tracking-[0.28em]">
+                  CLASS OF 2027
+                </span>
+              </span>
+            </Link>
 
-  <div className="grid w-full grid-cols-3 gap-1.5 sm:w-auto sm:flex sm:items-center sm:gap-2">
-    <Link
-      href="/teachers"
-      className="flex min-w-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-1 py-2 text-center text-[10px] font-bold leading-tight text-cyan-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
-    >
-      🎓 فضاء الأساتذة
-    </Link>
+            <div className="grid w-full grid-cols-3 gap-1.5 sm:w-auto sm:flex sm:items-center sm:gap-2">
+              <Link
+                href="/teachers"
+                className="flex min-w-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-1 py-2 text-center text-[10px] font-bold leading-tight text-cyan-200 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-4 sm:py-2.5 sm:text-sm"
+              >
+                🎓 فضاء الأساتذة
+              </Link>
 
-    <Link
-      href="/login"
-      className="flex min-w-0 items-center justify-center rounded-lg border border-white/10 px-1 py-2 text-center text-[10px] font-bold leading-tight text-slate-200 transition hover:border-cyan-300/30 hover:text-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
-    >
-      تسجيل الدخول
-    </Link>
+              <Link
+                href="/login"
+                className="flex min-w-0 items-center justify-center rounded-lg border border-white/10 px-1 py-2 text-center text-[10px] font-bold leading-tight text-slate-200 transition hover:border-cyan-300/30 hover:text-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
+              >
+                تسجيل الدخول
+              </Link>
 
-    <Link
-      href="/register"
-      className="flex min-w-0 items-center justify-center rounded-lg bg-cyan-300 px-1 py-2 text-center text-[10px] font-extrabold leading-tight text-[#061321] shadow-lg shadow-cyan-500/10 transition hover:bg-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
-    >
-      انضم إلينا
-    </Link>
-  </div>
-</nav>
-
+              <Link
+                href="/register"
+                className="flex min-w-0 items-center justify-center rounded-lg bg-cyan-300 px-1 py-2 text-center text-[10px] font-extrabold leading-tight text-[#061321] shadow-lg shadow-cyan-500/10 transition hover:bg-cyan-200 min-[380px]:px-1.5 min-[380px]:text-[11px] sm:shrink-0 sm:whitespace-nowrap sm:rounded-xl sm:px-5 sm:py-2.5 sm:text-sm"
+              >
+                انضم إلينا
+              </Link>
+            </div>
+          </nav>
         </header>
 
         {/* الواجهة الرئيسية */}
@@ -541,18 +589,36 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* شريط الهوية */}
-        <section className="relative z-10 border-y border-white/[0.07] bg-white/[0.02]">
-          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-5 px-4 py-7 sm:px-6 md:grid-cols-4 lg:px-8">
+
+
+        {/* شريط الهوية والإحصائيات */}
+        <section className="relative z-10 border-y border-cyan-300/10 bg-[#081827] py-8 sm:py-10">
+          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-4 px-4 sm:px-6 lg:grid-cols-6 lg:gap-5 lg:px-8">
             {[
-              { icon: "📚", title: "تعلّم", subtitle: "في مكان واحد" },
-              { icon: "🧠", title: "راجع", subtitle: "بطريقة تفاعلية" },
-              { icon: "📈", title: "تابع", subtitle: "تقدمك الدراسي" },
-              { icon: "🏆", title: "أنجز", subtitle: "واستمر في التحسن" },
+              {
+                icon: "📚",
+                title: "تعلّم",
+                subtitle: "في مكان واحد",
+              },
+              {
+                icon: "🧠",
+                title: "راجع",
+                subtitle: "بطريقة تفاعلية",
+              },
+              {
+                icon: "📈",
+                title: "تابع",
+                subtitle: "تقدمك الدراسي",
+              },
+              {
+                icon: "🏆",
+                title: "أنجز",
+                subtitle: "واستمر في التحسن",
+              },
             ].map((item) => (
               <div
-                key={item.title}
-                className="flex items-center justify-center gap-3 sm:justify-start md:justify-center"
+                key={item.subtitle}
+                className="flex items-center justify-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] px-3 py-4"
               >
                 <span className="text-2xl">{item.icon}</span>
                 <div>
@@ -565,8 +631,74 @@ export default function LandingPage() {
                 </div>
               </div>
             ))}
+
+            {/* عدد الطلاب المسجلين */}
+            <div className="group relative isolate overflow-hidden rounded-2xl border border-cyan-300/25 bg-gradient-to-br from-[#0c3045] via-[#09263b] to-[#071827] px-4 py-6 text-center shadow-[0_0_25px_rgba(34,211,238,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/60 hover:shadow-[0_0_35px_rgba(34,211,238,0.16)] sm:py-7">
+              <div className="pointer-events-none absolute -right-10 -top-10 -z-10 h-32 w-32 rounded-full bg-cyan-300/10 blur-3xl transition-all duration-500 group-hover:bg-cyan-300/20" />
+              <div className="pointer-events-none absolute -bottom-12 -left-8 -z-10 h-28 w-28 rounded-full bg-blue-500/10 blur-3xl" />
+
+              <div className="relative">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.08] text-2xl shadow-inner shadow-cyan-200/5 transition-transform duration-300 group-hover:scale-110">
+                  🎓
+                </div>
+
+                <p className="mt-4 text-xs font-bold tracking-wide text-cyan-100/80 sm:text-sm">
+                  مجتمع MARIS
+                </p>
+
+                <p
+                  dir="ltr"
+                  className="mt-1 text-4xl font-black tabular-nums tracking-tight text-white drop-shadow-[0_0_14px_rgba(103,232,249,0.35)] sm:text-5xl lg:text-4xl xl:text-5xl"
+                >
+                  {students === null ? "—" : students.toLocaleString("en-US")}
+                </p>
+
+                <div className="mx-auto my-3 h-1 w-12 rounded-full bg-gradient-to-r from-cyan-400 to-blue-400 transition-all duration-300 group-hover:w-20" />
+
+                <p className="text-sm font-extrabold text-cyan-200 sm:text-base">
+                  طالب مسجّل
+                </p>
+                <p className="mt-2 text-[10px] leading-5 text-slate-400 sm:text-xs">
+                  كل طالب جزء من رحلتنا نحو النجاح
+                </p>
+              </div>
+            </div>
+
+            {/* عدد الزوار */}
+            <div className="group relative isolate overflow-hidden rounded-2xl border border-blue-300/25 bg-gradient-to-br from-[#102c4b] via-[#0a223c] to-[#071827] px-4 py-6 text-center shadow-[0_0_25px_rgba(96,165,250,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-blue-300/60 hover:shadow-[0_0_35px_rgba(96,165,250,0.16)] sm:py-7">
+              <div className="pointer-events-none absolute -left-10 -top-10 -z-10 h-32 w-32 rounded-full bg-blue-400/10 blur-3xl transition-all duration-500 group-hover:bg-blue-400/20" />
+              <div className="pointer-events-none absolute -bottom-12 -right-8 -z-10 h-28 w-28 rounded-full bg-cyan-400/10 blur-3xl" />
+
+              <div className="relative">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-300/20 bg-blue-300/[0.08] text-2xl shadow-inner shadow-blue-200/5 transition-transform duration-300 group-hover:scale-110">
+                  🌊
+                </div>
+
+                <p className="mt-4 text-xs font-bold tracking-wide text-blue-100/80 sm:text-sm">
+                  أثرنا الرقمي
+                </p>
+
+                <p
+                  dir="ltr"
+                  className="mt-1 text-4xl font-black tabular-nums tracking-tight text-white drop-shadow-[0_0_14px_rgba(147,197,253,0.35)] sm:text-5xl lg:text-4xl xl:text-5xl"
+                >
+                  {visitors === null ? "—" : visitors.toLocaleString("en-US")}
+                </p>
+
+                <div className="mx-auto my-3 h-1 w-12 rounded-full bg-gradient-to-r from-blue-400 to-cyan-300 transition-all duration-300 group-hover:w-20" />
+
+                <p className="text-sm font-extrabold text-blue-200 sm:text-base">
+                  زائر فريد
+                </p>
+                <p className="mt-2 text-[10px] leading-5 text-slate-400 sm:text-xs">
+                  حضور يتوسّع، وطموح يكبر
+                </p>
+              </div>
+            </div>
           </div>
         </section>
+
+
 
         {/* المميزات */}
         <section

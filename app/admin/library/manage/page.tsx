@@ -53,6 +53,8 @@ export default function LibraryManagePage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedStream, setSelectedStream] = useState<string | null>(null);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
 
   const [subjects, setSubjects] = useState<LibrarySubject[]>([]);
   const [resources, setResources] = useState<LibraryResource[]>([]);
@@ -200,6 +202,37 @@ export default function LibraryManagePage() {
         .includes(normalizedSearch);
     });
   }, [resources, subjectMap, normalizedSearch]);
+
+  const visibleSubjects = useMemo(() => {
+    if (!normalizedSearch) return subjects;
+    const subjectIdsWithMatchingResources = new Set(
+      filteredResources.map((resource) => resource.subject_id)
+    );
+    return subjects.filter(
+      (subject) =>
+        filteredSubjects.some((item) => item.id === subject.id) ||
+        subjectIdsWithMatchingResources.has(subject.id)
+    );
+  }, [subjects, filteredSubjects, filteredResources, normalizedSearch]);
+
+  const streams = useMemo(
+    () => Array.from(new Set(visibleSubjects.map((subject) => subject.stream))).sort((a, b) => a.localeCompare(b, "ar")),
+    [visibleSubjects]
+  );
+
+  const streamSubjects = useMemo(
+    () => visibleSubjects.filter((subject) => subject.stream === selectedStream),
+    [visibleSubjects, selectedStream]
+  );
+
+  const selectedSubject = selectedSubjectId
+    ? subjectMap.get(selectedSubjectId) ?? null
+    : null;
+
+  const subjectResources = useMemo(
+    () => filteredResources.filter((resource) => resource.subject_id === selectedSubjectId),
+    [filteredResources, selectedSubjectId]
+  );
 
   function startEditSubject(subject: LibrarySubject) {
     setEditingSubject(subject);
@@ -553,55 +586,43 @@ export default function LibraryManagePage() {
       className="min-h-screen px-4 py-6 text-white sm:px-6 lg:px-8"
     >
       <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/20 p-5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-gradient-to-br from-cyan-950/50 via-slate-900/80 to-slate-950 p-5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-black sm:text-3xl">
-              🗂️ إدارة المواد والموارد
-            </h1>
-            <p className="mt-2 text-sm text-white/60">
-              عدّل المحتوى، تحكّم في النشر والإخفاء، واحذف ما لم تعد تحتاجه.
-            </p>
+            <p className="mb-2 text-xs font-bold tracking-widest text-cyan-300">🌊 MARIS ACADEMY ²⁰²⁷</p>
+            <h1 className="text-2xl font-black sm:text-3xl">🗂️ إدارة المواد والموارد</h1>
+            <p className="mt-2 text-sm text-white/60">تنظيم المكتبة حسب الشعبة، ثم المادة، ثم مواردها.</p>
           </div>
-
-          <Link
-            href="/admin/library"
-            className={buttonClass}
-          >
-            ← العودة إلى مكتبة الدروس
-          </Link>
+          <Link href="/admin/library" className={buttonClass}>← العودة إلى مكتبة الدروس</Link>
         </header>
 
-        {error && (
-          <div
-            role="alert"
-            className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200"
-          >
-            ⚠️ {error}
+        {error && <div role="alert" className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">⚠️ {error}</div>}
+        {success && <div role="status" className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">✅ {success}</div>}
+
+        <section className="rounded-3xl border border-white/10 bg-black/20 p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setSelectedStream(null);
+                setSelectedSubjectId(null);
+              }}
+              placeholder="🔎 ابحث عن شعبة أو مادة أو مورد..."
+              className={inputClass}
+            />
+            <div className="shrink-0 rounded-xl bg-white/5 px-4 py-3 text-sm text-white/70">
+              {subjects.length} مادة <span className="mx-1 text-white/30">·</span> {resources.length} مورد
+            </div>
           </div>
-        )}
-
-        {success && (
-          <div
-            role="status"
-            className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-200"
-          >
-            ✅ {success}
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-white/50">
+            <span className="rounded-lg bg-cyan-400/10 px-3 py-2 text-cyan-200">1. الشعب</span>
+            <span>←</span>
+            <span className="rounded-lg bg-cyan-400/10 px-3 py-2 text-cyan-200">2. المواد</span>
+            <span>←</span>
+            <span className="rounded-lg bg-cyan-400/10 px-3 py-2 text-cyan-200">3. الموارد</span>
           </div>
-        )}
-
-        <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="🔎 ابحث عن مادة أو مورد..."
-            className={inputClass}
-          />
-
-          <p className="mt-3 text-xs text-white/50">
-            {filteredSubjects.length} مادة · {filteredResources.length} مورد
-          </p>
-        </div>
+        </section>
 
         {editingSubject && (
           <section className="space-y-4 rounded-3xl border border-cyan-400/20 bg-slate-900/80 p-5">
@@ -866,228 +887,129 @@ export default function LibraryManagePage() {
         )}
 
         {loading ? (
-          <div className="rounded-3xl border border-white/10 bg-black/20 p-10 text-center text-white/60">
-            جاري تحميل المواد والموارد...
-          </div>
+          <div className="rounded-3xl border border-white/10 bg-black/20 p-10 text-center text-white/60">جاري تحميل المواد والموارد...</div>
         ) : (
-          <div className="space-y-8">
-            <section>
-              <div className="mb-4">
-                <h2 className="text-xl font-black">📚 المواد</h2>
-                <p className="mt-1 text-sm text-white/50">
-                  {filteredSubjects.length} مادة
-                </p>
-              </div>
-
-              {filteredSubjects.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-white/50">
-                  لا توجد مواد مطابقة للبحث.
+          <div className="space-y-6">
+            {!selectedStream ? (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="text-xl font-black">🎓 الشعب الدراسية</h2>
+                  <p className="mt-1 text-sm text-white/50">اختر شعبة لعرض المواد التابعة لها.</p>
                 </div>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredSubjects.map((subject) => {
-                    const count = resources.filter(
-                      (resource) => resource.subject_id === subject.id
-                    ).length;
-
-                    return (
-                      <article
-                        key={subject.id}
-                        className="rounded-3xl border border-white/10 bg-black/20 p-5 backdrop-blur-xl"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-2xl">
-                            {subject.icon || "📚"}
+                {streams.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-white/50">ما لقيناش شعب أو مواد مطابقة للبحث.</div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {streams.map((stream) => {
+                      const streamSubjectList = visibleSubjects.filter((subject) => subject.stream === stream);
+                      const streamResourceCount = resources.filter((resource) => streamSubjectList.some((subject) => subject.id === resource.subject_id)).length;
+                      return (
+                        <button
+                          key={stream}
+                          type="button"
+                          onClick={() => { setSelectedStream(stream); setSelectedSubjectId(null); }}
+                          className="group rounded-3xl border border-white/10 bg-black/20 p-5 text-right transition hover:border-cyan-400/40 hover:bg-cyan-950/30"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/10 text-3xl">🎓</div>
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-black leading-6">{stream}</h3>
+                              <p className="mt-1 text-xs text-white/50">{streamSubjectList.length} مادة · {streamResourceCount} مورد</p>
+                            </div>
+                            <span className="text-xl text-cyan-300 transition group-hover:-translate-x-1">←</span>
                           </div>
-
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-bold">{subject.name}</h3>
-                            <p className="mt-1 text-xs text-cyan-300">
-                              {subject.stream}
-                            </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : !selectedSubject ? (
+              <section className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <button type="button" onClick={() => { setSelectedStream(null); setSelectedSubjectId(null); }} className="mb-2 text-sm font-bold text-cyan-300 hover:text-cyan-200">← الرجوع إلى الشعب</button>
+                    <h2 className="text-xl font-black">📚 مواد شعبة {selectedStream}</h2>
+                    <p className="mt-1 text-sm text-white/50">اختار مادة باش تشوف الموارد الخاصة بها.</p>
+                  </div>
+                  <span className="rounded-xl bg-white/5 px-3 py-2 text-xs text-white/60">{streamSubjects.length} مادة</span>
+                </div>
+                {streamSubjects.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-white/50">ما كاين حتى مادة مطابقة للبحث في هذي الشعبة.</div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {streamSubjects.map((subject) => {
+                      const count = resources.filter((resource) => resource.subject_id === subject.id).length;
+                      return (
+                        <article key={subject.id} className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                          <button type="button" onClick={() => setSelectedSubjectId(subject.id)} className="w-full text-right">
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-2xl">{subject.icon || "📚"}</div>
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-black">{subject.name}</h3>
+                                <p className="mt-1 text-xs text-cyan-300">{subject.stream}</p>
+                              </div>
+                              <span className="text-lg text-cyan-300">←</span>
+                            </div>
+                            {subject.description && <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/50">{subject.description}</p>}
+                            <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs">
+                              <span className={subject.is_active ? "text-emerald-300" : "text-red-300"}>{subject.is_active ? "● مفعّلة" : "● مخفية"}</span>
+                              <span className="text-white/50">{count} مورد</span>
+                            </div>
+                          </button>
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button type="button" onClick={() => startEditSubject(subject)} disabled={busy} className={buttonClass}>✏️ تعديل</button>
+                            <button type="button" onClick={() => void toggleSubject(subject)} disabled={busy} className={buttonClass}>{subject.is_active ? "🙈 إخفاء" : "👁️ إظهار"}</button>
+                            <button type="button" onClick={() => void deleteSubject(subject)} disabled={busy} className="col-span-2 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50">🗑️ حذف المادة</button>
                           </div>
-                        </div>
-
-                        {subject.description && (
-                          <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/55">
-                            {subject.description}
-                          </p>
-                        )}
-
-                        <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4 text-xs">
-                          <span
-                            className={
-                              subject.is_active
-                                ? "text-emerald-300"
-                                : "text-red-300"
-                            }
-                          >
-                            {subject.is_active ? "● مفعّلة" : "● مخفية"}
-                          </span>
-                          <span className="text-white/50">
-                            {count} مورد
-                          </span>
-                        </div>
-
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditSubject(subject)}
-                            disabled={busy}
-                            className={buttonClass}
-                          >
-                            ✏️ تعديل
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => void toggleSubject(subject)}
-                            disabled={busy}
-                            className={buttonClass}
-                          >
-                            {subject.is_active ? "🙈 إخفاء" : "👁️ إظهار"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => void deleteSubject(subject)}
-                            disabled={busy}
-                            className="col-span-2 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
-                          >
-                            🗑️ حذف المادة
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : (
+              <section className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <button type="button" onClick={() => setSelectedSubjectId(null)} className="mb-2 text-sm font-bold text-cyan-300 hover:text-cyan-200">← الرجوع إلى مواد {selectedStream}</button>
+                    <h2 className="text-xl font-black">{selectedSubject.icon || "📚"} موارد مادة {selectedSubject.name}</h2>
+                    <p className="mt-1 text-sm text-white/50">الشعبة: {selectedSubject.stream} · {subjectResources.length} مورد</p>
+                  </div>
+                  <span className={selectedSubject.is_active ? "rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300" : "rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-300"}>{selectedSubject.is_active ? "المادة مفعّلة" : "المادة مخفية"}</span>
                 </div>
-              )}
-            </section>
-
-            <section>
-              <div className="mb-4">
-                <h2 className="text-xl font-black">📄 الموارد</h2>
-                <p className="mt-1 text-sm text-white/50">
-                  {filteredResources.length} مورد
-                </p>
-              </div>
-
-              {filteredResources.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-white/50">
-                  لا توجد موارد مطابقة للبحث.
-                </div>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {filteredResources.map((resource) => {
-                    const subject = subjectMap.get(resource.subject_id);
-                    const imageCount = Array.isArray(resource.image_urls)
-                      ? resource.image_urls.length
-                      : 0;
-
-                    return (
-                      <article
-                        key={resource.id}
-                        className="rounded-3xl border border-white/10 bg-black/20 p-5 backdrop-blur-xl"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h3 className="font-bold leading-6">
-                              {resource.title}
-                            </h3>
-                            <p className="mt-1 text-xs text-cyan-300">
-                              {subject?.name || "مادة غير معروفة"}
-                            </p>
-                            <p className="mt-1 text-xs text-white/40">
-                              {subject?.stream || ""}
-                            </p>
+                {subjectResources.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-white/10 p-8 text-center text-white/50">ما كاين حتى مورد في هذي المادة{normalizedSearch ? " يطابق البحث" : " حالياً"}.</div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {subjectResources.map((resource) => {
+                      const imageCount = Array.isArray(resource.image_urls) ? resource.image_urls.length : 0;
+                      return (
+                        <article key={resource.id} className="rounded-3xl border border-white/10 bg-black/20 p-5 backdrop-blur-xl">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0"><h3 className="font-bold leading-6">{resource.title}</h3><p className="mt-1 text-xs text-cyan-300">{selectedSubject.name}</p><p className="mt-1 text-xs text-white/40">{selectedSubject.stream}</p></div>
+                            <span className="shrink-0 rounded-xl bg-white/10 px-3 py-1.5 text-xs">{RESOURCE_TYPES[resource.resource_type] || resource.resource_type}</span>
                           </div>
-
-                          <span className="shrink-0 rounded-xl bg-white/10 px-3 py-1.5 text-xs">
-                            {RESOURCE_TYPES[resource.resource_type] ||
-                              resource.resource_type}
-                          </span>
-                        </div>
-
-                        {resource.description && (
-                          <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/55">
-                            {resource.description}
-                          </p>
-                        )}
-
-                        <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4 text-xs">
-                          {resource.year && (
-                            <span className="rounded-xl bg-white/5 px-3 py-1.5 text-white/50">
-                              📅 {resource.year}
-                            </span>
-                          )}
-
-                          <span
-                            className={
-                              resource.is_published
-                                ? "rounded-xl bg-emerald-500/10 px-3 py-1.5 text-emerald-300"
-                                : "rounded-xl bg-yellow-500/10 px-3 py-1.5 text-yellow-300"
-                            }
-                          >
-                            {resource.is_published
-                              ? "● منشور"
-                              : "● غير منشور"}
-                          </span>
-
-                          {resource.pdf_url && (
-                            <span className="rounded-xl bg-red-500/10 px-3 py-1.5 text-red-300">
-                              📄 PDF
-                            </span>
-                          )}
-
-                          {imageCount > 0 && (
-                            <span className="rounded-xl bg-cyan-500/10 px-3 py-1.5 text-cyan-200">
-                              🖼️ {imageCount} صورة
-                            </span>
-                          )}
-
-                          {resource.content && (
-                            <span className="rounded-xl bg-blue-500/10 px-3 py-1.5 text-blue-300">
-                              📝 محتوى
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditResource(resource)}
-                            disabled={busy}
-                            className={buttonClass}
-                          >
-                            ✏️ تعديل
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => void toggleResource(resource)}
-                            disabled={busy}
-                            className={buttonClass}
-                          >
-                            {resource.is_published
-                              ? "🙈 إخفاء"
-                              : "🚀 نشر"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => void deleteResource(resource)}
-                            disabled={busy}
-                            className="col-span-2 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
-                          >
-                            🗑️ حذف المورد
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+                          {resource.description && <p className="mt-3 line-clamp-3 text-sm leading-6 text-white/55">{resource.description}</p>}
+                          <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4 text-xs">
+                            {resource.year && <span className="rounded-xl bg-white/5 px-3 py-1.5 text-white/50">📅 {resource.year}</span>}
+                            <span className={resource.is_published ? "rounded-xl bg-emerald-500/10 px-3 py-1.5 text-emerald-300" : "rounded-xl bg-yellow-500/10 px-3 py-1.5 text-yellow-300"}>{resource.is_published ? "● منشور" : "● غير منشور"}</span>
+                            {resource.pdf_url && <span className="rounded-xl bg-red-500/10 px-3 py-1.5 text-red-300">📄 PDF</span>}
+                            {imageCount > 0 && <span className="rounded-xl bg-cyan-500/10 px-3 py-1.5 text-cyan-200">🖼️ {imageCount} صورة</span>}
+                            {resource.content && <span className="rounded-xl bg-blue-500/10 px-3 py-1.5 text-blue-300">📝 محتوى</span>}
+                          </div>
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button type="button" onClick={() => startEditResource(resource)} disabled={busy} className={buttonClass}>✏️ تعديل</button>
+                            <button type="button" onClick={() => void toggleResource(resource)} disabled={busy} className={buttonClass}>{resource.is_published ? "🙈 إخفاء" : "🚀 نشر"}</button>
+                            <button type="button" onClick={() => void deleteResource(resource)} disabled={busy} className="col-span-2 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-sm font-bold text-red-300 transition hover:bg-red-500/20 disabled:opacity-50">🗑️ حذف المورد</button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         )}
       </div>

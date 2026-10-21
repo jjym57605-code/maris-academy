@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
@@ -63,6 +62,14 @@ const emptyForm: CardForm = {
   stream: "all",
   is_active: true,
 };
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 const SCIENCE_STREAMS = [
   "علوم تجريبية",
@@ -178,6 +185,9 @@ export default function AdminFlashcardsPage() {
   const [form, setForm] = useState<CardForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
   const [filterSubject, setFilterSubject] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterUnit, setFilterUnit] = useState("all");
@@ -186,6 +196,14 @@ export default function AdminFlashcardsPage() {
 
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    if (!imagePreview?.startsWith("blob:")) return;
+
+    return () => {
+      URL.revokeObjectURL(imagePreview);
+    };
+  }, [imagePreview]);
 
   async function loadCards() {
     const supabase = getSupabase();
@@ -275,6 +293,8 @@ export default function AdminFlashcardsPage() {
 
   function resetForm() {
     setForm(emptyForm);
+    setSelectedImage(null);
+    setImagePreview(null);
     setEditingId(null);
     setMessage("");
     setErrorMessage("");
@@ -293,6 +313,8 @@ export default function AdminFlashcardsPage() {
 
   function startEditing(card: Flashcard) {
     setEditingId(card.id);
+    setSelectedImage(null);
+    setImagePreview(card.image_url ?? null);
 
     const savedGroup = card.personality_group;
     const validGroup =
@@ -322,6 +344,95 @@ export default function AdminFlashcardsPage() {
     setMessage("");
     setErrorMessage("");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleImageChange(file: File | null) {
+    setErrorMessage("");
+    setMessage("");
+
+    if (!file) {
+      setSelectedImage(null);
+      setImagePreview(form.image_url.trim() || null);
+      return;
+    }
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setErrorMessage(
+        "صيغة الصورة غير مدعومة. اختار JPG أو PNG أو WebP."
+      );
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      setErrorMessage("حجم الصورة يفوت 5 MB. اختار صورة أصغر.");
+      return;
+    }
+
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+
+  async function uploadSelectedImage(): Promise<string | null> {
+    if (!selectedImage) {
+      return form.image_url.trim() || null;
+    }
+
+    const supabase = getSupabase();
+
+    if (!supabase) {
+      throw new Error("تعذر الاتصال بـ Supabase.");
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      router.replace("/login");
+      throw new Error("انتهت الجلسة. سجّل الدخول من جديد.");
+    }
+
+    const extensionByType: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+
+    const extension = extensionByType[selectedImage.type];
+
+    if (!extension) {
+      throw new Error("صيغة الصورة غير مدعومة.");
+    }
+
+    const filePath = `${user.id}/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("flashcards")
+      .upload(filePath, selectedImage, {
+        cacheControl: "3600",
+        contentType: selectedImage.type,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error("FLASHCARD IMAGE UPLOAD ERROR:", uploadError);
+      throw new Error(
+        "فشل رفع الصورة. تحقق من إعدادات Storage وصلاحيات الأدمن."
+      );
+    }
+
+    const { data } = supabase.storage
+      .from("flashcards")
+      .getPublicUrl(filePath);
+
+    if (!data.publicUrl) {
+      throw new Error("تعذر إنشاء رابط الصورة.");
+    }
+
+    return data.publicUrl;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -359,6 +470,7 @@ export default function AdminFlashcardsPage() {
     }
 
     if (
+      !selectedImage &&
       form.image_url.trim() &&
       !/^https?:\/\/\S+$/i.test(form.image_url.trim())
     ) {
@@ -368,16 +480,27 @@ export default function AdminFlashcardsPage() {
       return;
     }
 
+    if (
+      selectedImage &&
+      (!ALLOWED_IMAGE_TYPES.includes(selectedImage.type) ||
+        selectedImage.size > MAX_IMAGE_SIZE)
+    ) {
+      setErrorMessage("تحقق من صيغة الصورة وحجمها (الحد الأقصى 5 MB).");
+      return;
+    }
+
     setSaving(true);
 
     try {
+      const uploadedImageUrl = await uploadSelectedImage();
+
       const payload = {
         subject: form.subject,
         card_type: form.card_type,
         title: form.title.trim(),
         front_content: form.front_content.trim(),
         back_content: form.back_content.trim(),
-        image_url: form.image_url.trim() || null,
+        image_url: uploadedImageUrl,
         sort_order: Math.max(0, Number(form.sort_order) || 0),
         unit_name: form.unit_name.trim(),
         personality_group:
@@ -424,12 +547,16 @@ export default function AdminFlashcardsPage() {
       }
 
       setForm(emptyForm);
+      setSelectedImage(null);
+      setImagePreview(null);
       setEditingId(null);
       await loadCards();
     } catch (error) {
       console.error("SAVE FLASHCARD ERROR:", error);
       setErrorMessage(
-        "ما قدرناش نحفظو البطاقة. تحقق من صلاحيات Supabase وحاول مجددًا."
+        error instanceof Error
+          ? error.message
+          : "ما قدرناش نحفظو البطاقة. تحقق من صلاحيات Supabase وحاول مجددًا."
       );
     } finally {
       setSaving(false);
@@ -758,17 +885,78 @@ export default function AdminFlashcardsPage() {
               </Field>
             </div>
 
-            <Field label="رابط الصورة (اختياري)">
+            <div className="space-y-3 rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.035] p-4">
+              <div>
+                <p className="font-semibold text-white">
+                  🖼️ صورة البطاقة (اختياري)
+                </p>
+                <p className="mt-1 text-xs leading-6 text-slate-400">
+                  اختار صورة من جهازك بصيغة JPG أو PNG أو WebP، وبحجم لا يتجاوز 5 MB.
+                  الصورة تظهر في معاينة البطاقة، وسيتم رفعها عند حفظ البطاقة.
+                </p>
+              </div>
+
               <input
-                type="url"
-                value={form.image_url}
-                onChange={(event) =>
-                  updateForm("image_url", event.target.value)
-                }
-                placeholder="https://..."
-                className={inputClass}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => {
+                  handleImageChange(event.target.files?.[0] ?? null);
+                  event.currentTarget.value = "";
+                }}
+                className="block w-full cursor-pointer rounded-xl border border-white/10 bg-[#061522] p-3 text-sm text-slate-300 file:ml-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-cyan-400/15 file:px-3 file:py-2 file:font-semibold file:text-cyan-300"
               />
-            </Field>
+
+              {imagePreview && (
+                <div className="flex flex-wrap items-start gap-4 rounded-xl border border-white/10 bg-[#061522] p-3">
+                  <img
+                    src={imagePreview}
+                    alt="معاينة صورة البطاقة"
+                    className="h-32 w-32 rounded-xl border border-cyan-400/20 object-contain"
+                  />
+
+                  <div className="flex flex-col items-start gap-2">
+                    <span className="text-sm text-emerald-300">
+                      {selectedImage ? "صورة جديدة جاهزة للرفع" : "الصورة الحالية"}
+                    </span>
+
+                    {selectedImage && (
+                      <span className="text-xs text-slate-500">
+                        {(selectedImage.size / (1024 * 1024)).toFixed(2)} MB
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedImage(null);
+                        setImagePreview(null);
+                        updateForm("image_url", "");
+                      }}
+                      className="rounded-lg border border-red-400/20 px-3 py-2 text-xs text-red-300 hover:bg-red-400/10"
+                    >
+                      إزالة الصورة
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <Field label="أو استعمل رابط صورة موجود (اختياري)">
+                <input
+                  type="url"
+                  value={form.image_url}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    updateForm("image_url", value);
+
+                    if (!selectedImage) {
+                      setImagePreview(value.trim() || null);
+                    }
+                  }}
+                  placeholder="https://..."
+                  className={inputClass}
+                />
+              </Field>
+            </div>
 
             <div className="grid gap-5 md:grid-cols-2">
               <Field label="ترتيب البطاقة">
@@ -811,7 +999,7 @@ export default function AdminFlashcardsPage() {
               className="w-full rounded-2xl bg-cyan-400 px-5 py-3.5 font-bold text-[#041724] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-48"
             >
               {saving
-                ? "جاري الحفظ..."
+                ? "جاري الحفظ والرفع..."
                 : editingId
                   ? "حفظ التعديلات"
                   : "إضافة البطاقة"}

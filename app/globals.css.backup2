@@ -1,0 +1,216 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-navy-950 text-foam font-tajawal antialiased;
+  min-height: 100vh;
+  overflow-x: clip;
+}
+
+::selection {
+  @apply bg-cyan-400/30 text-white;
+}
+
+/* ── شريط التمرير ── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-navy-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-ocean-600;
+}
+
+@layer components {
+  /* ── بطاقة زجاجية ── */
+
+  .glass-card {
+    @apply rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-card;
+  }
+
+  .glass-card-hover {
+    @apply transition-all duration-300 hover:border-cyan-400/30 hover:bg-white/[0.07] hover:shadow-glow;
+  }
+
+  /* ── زر رئيسي ── */
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-ocean-500 to-cyan-500
+      px-6 py-3 font-bold text-white shadow-glow transition-all duration-300
+      hover:from-ocean-400 hover:to-cyan-400 hover:shadow-[0_0_50px_rgba(34,211,238,0.3)]
+      active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px];
+  }
+
+  /* ── زر ثانوي ── */
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5
+      px-6 py-3 font-bold text-foam transition-all duration-300
+      hover:border-cyan-400/40 hover:bg-white/10 active:scale-[0.98]
+      disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px];
+  }
+
+  /* ── حقل إدخال ── */
+
+  .input-field {
+    @apply w-full rounded-2xl border border-white/10 bg-navy-900/70 px-4 py-3 text-foam
+      placeholder:text-foam/30 outline-none transition-all duration-300
+      focus:border-cyan-400/50 focus:bg-navy-900 focus:ring-2 focus:ring-cyan-400/20 min-h-[44px];
+  }
+
+  /* ── عنوان صفحة ── */
+
+  .page-title {
+    @apply text-2xl font-extrabold text-white sm:text-3xl;
+  }
+
+  /* ── شريط تقدم ── */
+
+  .progress-track {
+    @apply h-2.5 w-full overflow-hidden rounded-full bg-navy-700/60;
+  }
+
+  .progress-fill {
+    @apply h-full rounded-full bg-gradient-to-l from-cyan-400 to-teal-300 transition-all duration-700 ease-out;
+  }
+
+  /* ── شارة ── */
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-gradient-to-l from-cyan-300 via-ocean-300 to-teal-200 bg-clip-text text-transparent;
+  }
+
+  .skeleton {
+    @apply animate-shimmer rounded-2xl bg-gradient-to-l from-white/5 via-white/10 to-white/5 bg-[length:200%_100%];
+  }
+}
+
+/* ── تحسين الخلفية على الهاتف ── */
+
+@media (max-width: 640px) {
+  body {
+    background-attachment: scroll;
+    position: relative;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: rgba(2, 11, 24, 0.38);
+  }
+
+  /* تصغير المساحات العامة دون التأثير على الكمبيوتر */
+  main {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    padding-top: 1rem;
+    padding-bottom: 1.5rem;
+  }
+
+  /* العناوين */
+  .page-title {
+    font-size: 1.25rem;
+    line-height: 1.6;
+  }
+
+  /* البطاقات المشتركة */
+  .glass-card {
+    border-radius: 1.125rem;
+  }
+
+  /* الأزرار: أصغر مع بقاء مساحة لمس مناسبة */
+  .btn-primary,
+  .btn-secondary {
+    gap: 0.375rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 0.875rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* حقول الإدخال */
+  .input-field {
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.875rem;
+    font-size: 0.9375rem;
+  }
+
+  /* الشارات */
+  .badge {
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  /* منع العناصر ذات الكلمات الطويلة من توسيع الشاشة */
+  main,
+  main > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* تقليل التمرير الأفقي داخل الجداول */
+  main table {
+    max-width: 100%;
+  }
+
+  /* شريط التمرير */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* الهواتف الصغيرة */
+@media (max-width: 380px) {
+  main {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .page-title {
+    font-size: 1.125rem;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.8125rem;
+  }
+}
+
+/* احترام إعداد تقليل الحركة */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

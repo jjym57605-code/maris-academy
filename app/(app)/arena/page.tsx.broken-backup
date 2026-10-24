@@ -1,0 +1,878 @@
+
+function ArenaChallenges() {
+  const [challenges, setChallenges] = useState<ArenaChallenge[]>([]);
+  const [subjects, setSubjects] = useState<ArenaSubject[]>([]);
+  const [stream, setStream] = useState<string | null>(null);
+
+  const [accessCode, setAccessCode] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [joining, setJoining] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [participantId, setParticipantId] = useState<string | null>(null);
+  const [participantCounts, setParticipantCounts] = useState<
+    Record<string, ParticipantCount>
+  >({});
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createTitle, setCreateTitle] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
+  const [createSubjectId, setCreateSubjectId] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("10");
+  const [maxParticipants, setMaxParticipants] = useState("10");
+  const [questions, setQuestions] = useState<PersonalChallengeQuestion[]>([]);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createdChallenge, setCreatedChallenge] =
+    useState<PersonalChallengeResult | null>(null);
+  const [createError, setCreateError] = useState("");
+  const [createMessage, setCreateMessage] = useState("");
+
+  const loadChallenges = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        setError("تعذّر الاتصال بقاعدة البيانات.");
+        return;
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        setError(`تعذّر التحقق من تسجيل الدخول: ${authError.message}`);
+        return;
+      }
+
+      if (!user) {
+        setError("سجّل الدخول باش تشوف التحديات المتاحة.");
+        return;
+      }
+
+      const [profileResult, challengesResult, subjectsResult] =
+        await Promise.all([
+          supabase
+            .from("profiles")
+            .select("stream")
+            .eq("id", user.id)
+            .maybeSingle(),
+
+          supabase
+            .from("arena_challenges")
+            .select(
+              "id,title,description,challenge_type,subject_id,stream,question_count,duration_seconds,max_participants,status,starts_at,ends_at"
+            )
+            .eq("status", "open")
+            .order("created_at", { ascending: false }),
+
+          supabase.from("subjects").select("id,name,stream").order("name"),
+        ]);
+
+      if (profileResult.error) {
+        setError(`تعذّر تحميل ملفك الشخصي: ${profileResult.error.message}`);
+        return;
+      }
+
+      if (challengesResult.error) {
+        setError(`تعذّر تحميل التحديات: ${challengesResult.error.message}`);
+        return;
+      }
+
+      if (subjectsResult.error) {
+        setError(`تعذّر تحميل المواد: ${subjectsResult.error.message}`);
+        return;
+      }
+
+      const loadedChallenges = (challengesResult.data ??
+        []) as ArenaChallenge[];
+
+      setStream(profileResult.data?.stream ?? null);
+      setChallenges(loadedChallenges);
+      setSubjects((subjectsResult.data ?? []) as ArenaSubject[]);
+
+      const countResults = await Promise.all(
+        loadedChallenges.map(async (challenge) => {
+          const { count, error: countError } = await supabase
+            .from("arena_participants")
+            .select("id", { count: "exact", head: true })
+            .eq("challenge_id", challenge.id);
+
+          if (countError) {
+            console.error(
+              `Arena participant count error (${challenge.id}):`,
+              countError
+            );
+          }
+
+          return {
+            challengeId: challenge.id,
+            count: countError ? null : (count ?? 0),
+          };
+        })
+      );
+
+      setParticipantCounts(
+        Object.fromEntries(
+          countResults.map(({ challengeId, count }) => [
+            challengeId,
+            count,
+          ])
+        )
+      );
+    } catch (caughtError: unknown) {
+      console.error("Arena load error:", caughtError);
+      setError(
+        getErrorMessage(caughtError, "وقع خطأ أثناء تحميل التحديات.")
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadChallenges();
+  }, [loadChallenges]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadQuestions() {
+      setQuestions([]);
+      setSelectedQuestionIds([]);
+      setCreateError("");
+
+      if (!createSubjectId) return;
+
+      setLoadingQuestions(true);
+
+      try {
+        const supabase = getSupabase();
+
+        if (!supabase) {
+          setCreateError("تعذّر الاتصال بقاعدة البيانات.");
+          return;
+        }
+
+        const selectedSubject = subjects.find(
+          (subject) => subject.id === createSubjectId
+        );
+
+        const questionStream = selectedSubject?.stream ?? stream;
+
+        const { data, error: questionsError } = await supabase.rpc(
+          "arena_get_personal_challenge_questions",
+          {
+            p_subject_id: createSubjectId,
+            p_stream: questionStream,
+          }
+        );
+
+        if (questionsError) {
+          console.error("Arena question loading error:", questionsError);
+
+          if (!cancelled) {
+            setCreateError(
+              `تعذّر تحميل الأسئلة: ${questionsError.message}`
+            );
+          }
+
+          return;
+        }
+
+        if (!cancelled) {
+          setQuestions((data ?? []) as PersonalChallengeQuestion[]);
+        }
+      } catch (caughtError: unknown) {
+        if (!cancelled) {
+          setCreateError(
+            getErrorMessage(caughtError, "وقع خطأ أثناء تحميل الأسئلة.")
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingQuestions(false);
+        }
+      }
+    }
+
+    void loadQuestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createSubjectId, stream, subjects]);
+
+  const availableChallenges = challenges.filter((challenge) => {
+    if (!challenge.stream) return true;
+    return !!stream && challenge.stream.trim() === stream.trim();
+  });
+
+  const availableSubjects = subjects.filter(
+    (subject) =>
+      !stream ||
+      !subject.stream ||
+      subject.stream.trim() === stream.trim()
+  );
+
+  async function joinChallenge(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+    setParticipantId(null);
+
+    const code = accessCode.trim();
+
+    if (!code) {
+      setError("دخل كود التحدي أولًا.");
+      return;
+    }
+
+    setJoining(true);
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        setError("تعذّر الاتصال بقاعدة البيانات.");
+        return;
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        setError(`تعذّر التحقق من تسجيل الدخول: ${authError.message}`);
+        return;
+      }
+
+      if (!user) {
+        setError("سجّل الدخول قبل الانضمام للتحدي.");
+        return;
+      }
+
+      const { data, error: joinError } = await supabase.rpc(
+        "arena_join_challenge",
+        { p_access_code: code }
+      );
+
+      if (joinError) {
+        console.error("Arena join RPC error:", joinError);
+        setError(`تعذّر الانضمام: ${joinError.message}`);
+        return;
+      }
+
+      if (!data) {
+        setError("ما وصلناش تأكيد الانضمام. عاود حاول.");
+        return;
+      }
+
+      const newParticipantId = String(data);
+
+      window.location.href = `/arena/play?participant=${encodeURIComponent(
+        newParticipantId
+      )}`;
+    } catch (caughtError: unknown) {
+      console.error("Arena join unexpected error:", caughtError);
+      setError(
+        `وقع خطأ أثناء الانضمام: ${getErrorMessage(
+          caughtError,
+          "خطأ غير معروف."
+        )}`
+      );
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  function toggleQuestion(questionId: string) {
+    setSelectedQuestionIds((current) => {
+      if (current.includes(questionId)) {
+        return current.filter((id) => id !== questionId);
+      }
+
+      if (current.length >= 100) {
+        setCreateError("تقدر تختار حتى 100 سؤال فقط.");
+        return current;
+      }
+
+      setCreateError("");
+      return [...current, questionId];
+    });
+  }
+
+  async function createPersonalChallenge(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+    setCreateError("");
+    setCreateMessage("");
+    setCreatedChallenge(null);
+
+    const title = createTitle.trim();
+    const description = createDescription.trim();
+    const duration = Number(durationMinutes);
+    const maximum = Number(maxParticipants);
+
+    if (title.length < 3 || title.length > 100) {
+      setCreateError("عنوان التحدي لازم يكون بين 3 و100 حرف.");
+      return;
+    }
+
+    if (!createSubjectId) {
+      setCreateError("اختار المادة أولًا.");
+      return;
+    }
+
+    if (!Number.isInteger(duration) || duration < 1 || duration > 120) {
+      setCreateError("المدة لازم تكون بين دقيقة و120 دقيقة.");
+      return;
+    }
+
+    if (!Number.isInteger(maximum) || maximum < 2 || maximum > 100) {
+      setCreateError("عدد المشاركين لازم يكون بين 2 و100.");
+      return;
+    }
+
+    if (selectedQuestionIds.length === 0) {
+      setCreateError("اختار سؤالًا واحدًا على الأقل.");
+      return;
+    }
+
+    if (selectedQuestionIds.length > questions.length) {
+      setCreateError("عاود اختار الأسئلة المتاحة.");
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        setCreateError("تعذّر الاتصال بقاعدة البيانات.");
+        return;
+      }
+
+      const selectedSubject = subjects.find(
+        (subject) => subject.id === createSubjectId
+      );
+
+      const { data, error: creationError } = await supabase.rpc(
+        "arena_create_personal_challenge",
+        {
+          p_title: title,
+          p_description: description || null,
+          p_subject_id: createSubjectId,
+          p_stream: selectedSubject?.stream ?? stream,
+          p_duration_seconds: duration * 60,
+          p_max_participants: maximum,
+          p_question_ids: selectedQuestionIds,
+        }
+      );
+
+      if (creationError) {
+        console.error("Arena challenge creation error:", creationError);
+        setCreateError(`تعذّر إنشاء التحدي: ${creationError.message}`);
+        return;
+      }
+
+      const result = data as PersonalChallengeResult | null;
+
+      if (!result?.access_code) {
+        console.error("Unexpected challenge creation response:", data);
+        setCreateError(
+          "التحدي ربما تسجّل، لكن ما وصلناش كود المشاركة. حدّث الصفحة وتحقق من القائمة."
+        );
+        return;
+      }
+
+      setCreatedChallenge(result);
+      setCreateMessage("تم إنشاء التحدي بنجاح! هذا هو الكود الخاص بأصحابك.");
+      setCreateTitle("");
+      setCreateDescription("");
+      setCreateSubjectId("");
+      setSelectedQuestionIds([]);
+      setQuestions([]);
+
+      await loadChallenges();
+    } catch (caughtError: unknown) {
+      console.error("Arena challenge creation error:", caughtError);
+      setCreateError(
+        getErrorMessage(caughtError, "وقع خطأ أثناء إنشاء التحدي.")
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function formatDuration(seconds: number) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (minutes === 0) return `${seconds} ثانية`;
+    if (remainingSeconds === 0) return `${minutes} دقيقة`;
+
+    return `${minutes} د و ${remainingSeconds} ث`;
+  }
+
+  const inputClass =
+    "min-h-12 w-full rounded-xl border border-white/10 bg-[#061321] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-300/40";
+
+  return (
+    <section
+      id="arena-challenges"
+      className="space-y-5 rounded-3xl border border-cyan-300/15 bg-[#071727]/80 p-5 sm:p-7"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="mb-2 text-[10px] font-black tracking-[0.2em] text-cyan-300 sm:text-xs">
+            LIVE CHALLENGES
+          </p>
+
+          <h2 className="text-xl font-black text-white sm:text-2xl">
+            ⚔️ التحديات المتاحة
+          </h2>
+
+          <p className="mt-2 text-sm leading-7 text-slate-400">
+            اكتشف التحديات المفتوحة لشعبتك، أو انضمّ مباشرة باستعمال الكود.
+          </p>
+
+          {stream && (
+            <span className="mt-3 inline-flex rounded-full border border-cyan-300/15 bg-cyan-300/[0.06] px-3 py-1.5 text-xs font-bold text-cyan-200">
+              شعبتك: {stream}
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setShowCreateForm((current) => !current);
+            setCreateError("");
+          }}
+          className="min-h-12 shrink-0 rounded-xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-5 py-3 text-sm font-black text-[#052033] transition hover:brightness-110"
+        >
+          {showCreateForm ? "إغلاق النموذج ✕" : "＋ اصنع تحدّيك"}
+        </button>
+      </div>
+
+      {createdChallenge && (
+        <div className="rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.06] p-5">
+          <p className="text-lg font-black text-emerald-200">
+            🎉 {createMessage}
+          </p>
+
+          <p className="mt-2 text-sm text-slate-300">
+            {createdChallenge.title}
+          </p>
+
+          <p className="mt-4 text-xs text-emerald-100/70">
+            كود المشاركة — ابعثه غير للأشخاص اللي حابّهم ينضمّوا:
+          </p>
+
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+            <code
+              dir="ltr"
+              className="flex min-h-14 flex-1 items-center justify-center rounded-xl border border-emerald-300/20 bg-black/25 px-4 text-2xl font-black tracking-[0.2em] text-white"
+            >
+              {createdChallenge.access_code}
+            </code>
+
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(createdChallenge.access_code)
+                  .then(() => setCreateMessage("تم نسخ الكود بنجاح! ابعثه لصحابك."))
+                  .catch(() =>
+                    setCreateError("ما قدرناش ننسخو الكود. انسخو يدويًا.")
+                  );
+              }}
+              className="min-h-12 rounded-xl border border-emerald-300/25 px-5 py-3 text-sm font-bold text-emerald-200 transition hover:bg-emerald-300/10"
+            >
+              نسخ الكود
+            </button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+            <span className="rounded-lg bg-black/20 px-3 py-2">
+              📝 {createdChallenge.question_count} سؤال
+            </span>
+            <span className="rounded-lg bg-black/20 px-3 py-2">
+              ⏱️ {formatDuration(createdChallenge.duration_seconds)}
+            </span>
+            <span className="rounded-lg bg-black/20 px-3 py-2">
+              👥 حتى {createdChallenge.max_participants} مشارك
+            </span>
+          </div>
+        </div>
+      )}
+
+      {showCreateForm && (
+        <form
+          onSubmit={createPersonalChallenge}
+          className="space-y-5 rounded-2xl border border-cyan-300/15 bg-black/15 p-4 sm:p-6"
+        >
+          <div>
+            <p className="text-lg font-black text-white">
+              🌊 اصنع تحدّيك الخاص
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              اختار المادة والأسئلة والوقت، وبعدها ابعث الكود لصحابك.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                عنوان التحدي *
+              </span>
+              <input
+                required
+                minLength={3}
+                maxLength={100}
+                value={createTitle}
+                onChange={(event) => setCreateTitle(event.target.value)}
+                placeholder="مثال: تحدي الفيزياء"
+                className={inputClass}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                المادة *
+              </span>
+              <select
+                required
+                value={createSubjectId}
+                onChange={(event) => setCreateSubjectId(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">اختار المادة</option>
+                {availableSubjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                    {subject.stream ? ` — ${subject.stream}` : ""}
+                  </option>
+                ))}
+              </select>
+              {availableSubjects.length === 0 && (
+                <span className="mt-2 block text-xs text-amber-200">
+                  ما لقيناش مواد مناسبة لشعبتك.
+                </span>
+              )}
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold text-slate-200">
+              وصف التحدي
+            </span>
+            <textarea
+              value={createDescription}
+              onChange={(event) => setCreateDescription(event.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder="اكتب وصفًا قصيرًا للتحدي (اختياري)..."
+              className={inputClass}
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                مدة التحدي بالدقائق *
+              </span>
+              <input
+                required
+                type="number"
+                min={1}
+                max={120}
+                value={durationMinutes}
+                onChange={(event) => setDurationMinutes(event.target.value)}
+                className={inputClass}
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                من دقيقة حتى ساعتين.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                الحد الأقصى للمشاركين *
+              </span>
+              <input
+                required
+                type="number"
+                min={2}
+                max={100}
+                value={maxParticipants}
+                onChange={(event) => setMaxParticipants(event.target.value)}
+                className={inputClass}
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                من 2 حتى 100 مشارك.
+              </span>
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-black text-white">
+                📝 اختار الأسئلة *
+              </h3>
+              <span className="rounded-full border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-1.5 text-xs font-bold text-cyan-200">
+                اخترت {selectedQuestionIds.length} سؤال
+              </span>
+            </div>
+
+            {!createSubjectId ? (
+              <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">
+                اختار المادة أولًا باش تظهرلك الأسئلة المتاحة.
+              </p>
+            ) : loadingQuestions ? (
+              <p className="rounded-xl border border-white/10 p-4 text-sm text-slate-400">
+                جارٍ تحميل الأسئلة...
+              </p>
+            ) : questions.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-400">
+                ما كاين حتى سؤال منشور ومناسب لهاذ المادة والشعبة حاليًا.
+              </p>
+            ) : (
+              <div className="max-h-96 space-y-2 overflow-y-auto rounded-xl border border-white/[0.08] p-2">
+                {questions.map((question, index) => {
+                  const checked = selectedQuestionIds.includes(question.id);
+
+                  return (
+                    <label
+                      key={question.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                        checked
+                          ? "border-cyan-300/30 bg-cyan-300/[0.07]"
+                          : "border-white/[0.06] bg-white/[0.02] hover:border-white/15"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleQuestion(question.id)}
+                        className="mt-1 h-4 w-4 accent-cyan-300"
+                      />
+
+                      <span className="min-w-0 flex-1">
+                        <span className="mb-1 block text-[10px] font-bold text-cyan-300">
+                          السؤال {index + 1}
+                          {question.difficulty
+                            ? ` · ${
+                                question.difficulty === "easy"
+                                  ? "سهل"
+                                  : question.difficulty === "hard"
+                                    ? "صعب"
+                                    : question.difficulty === "medium"
+                                      ? "متوسط"
+                                      : question.difficulty
+                              }`
+                            : ""}
+                        </span>
+                        <span className="block whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">
+                          {question.question_text}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <p className="text-xs leading-5 text-slate-500">
+              الأسئلة المعروضة هي الأسئلة المنشورة فقط، والإجابات الصحيحة ما
+              تظهرش في قائمة الاختيار.
+            </p>
+          </div>
+
+          {createError && (
+            <p
+              role="alert"
+              className="break-words rounded-xl border border-red-400/20 bg-red-400/[0.06] p-3 text-sm leading-6 text-red-200"
+            >
+              {createError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={
+              creating ||
+              loadingQuestions ||
+              !createSubjectId ||
+              selectedQuestionIds.length === 0
+            }
+            className="min-h-12 w-full rounded-xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-5 py-3 text-sm font-black text-[#052033] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating
+              ? "جارٍ إنشاء التحدي..."
+              : `⚔️ أنشئ التحدي (${selectedQuestionIds.length} سؤال)`}
+          </button>
+        </form>
+      )}
+
+      <form
+        onSubmit={joinChallenge}
+        className="flex flex-col gap-3 sm:flex-row"
+      >
+        <input
+          value={accessCode}
+          onChange={(event) => setAccessCode(event.target.value)}
+          placeholder="دخل كود التحدي..."
+          aria-label="كود التحدي"
+          autoComplete="off"
+          maxLength={100}
+          className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-300/40"
+        />
+
+        <button
+          type="submit"
+          disabled={joining || !accessCode.trim()}
+          className="min-h-12 rounded-xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-6 text-sm font-black text-[#052033] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {joining ? "جارٍ الانضمام..." : "انضمّ للتحدي ←"}
+        </button>
+      </form>
+
+      {error && (
+        <p
+          role="alert"
+          className="break-words rounded-xl border border-red-400/20 bg-red-400/[0.06] p-3 text-sm leading-6 text-red-200"
+        >
+          {error}
+        </p>
+      )}
+
+      {message && (
+        <div
+          role="status"
+          className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4 text-sm leading-6 text-emerald-200"
+        >
+          <p>{message}</p>
+          {participantId && (
+            <p dir="ltr" className="mt-2 break-all font-mono text-xs">
+              {participantId}
+            </p>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-2xl border border-white/[0.07] p-6 text-center text-sm text-slate-400">
+          جارٍ تحميل التحديات...
+        </div>
+      ) : availableChallenges.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+          <p className="text-3xl">🌊</p>
+          <p className="mt-3 font-bold text-white">
+            ما كاين حتى تحدي مفتوح لشعبتك حاليًا
+          </p>
+          <p className="mt-2 text-xs leading-6 text-slate-400">
+            تقدر تنشئ تحديك الخاص أو تستعمل كود عطاهولك المنظّم.
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadChallenges()}
+            className="mt-4 rounded-xl border border-cyan-300/20 px-4 py-2 text-xs font-bold text-cyan-200 transition hover:bg-cyan-300/10"
+          >
+            تحديث القائمة ↻
+          </button>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {availableChallenges.map((challenge) => {
+            const subject = subjects.find(
+              (item) => item.id === challenge.subject_id
+            );
+
+            const participantCount = participantCounts[challenge.id];
+
+            return (
+              <article
+                key={challenge.id}
+                className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5 transition hover:border-cyan-300/25"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-xl">
+                    {challenge.challenge_type === "personal" ? "🤝" : "⚔️"}
+                  </div>
+
+                  <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-1 text-[10px] font-bold text-emerald-200">
+                    {challenge.challenge_type === "personal"
+                      ? "تحدي شخصي"
+                      : "تحدي رسمي"}
+                  </span>
+                </div>
+
+                <h3 className="mt-4 text-lg font-black text-white">
+                  {challenge.title}
+                </h3>
+
+                {challenge.description && (
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
+                    {challenge.description}
+                  </p>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    📚 {subject?.name ?? "مادة"}
+                  </span>
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    📝 {challenge.question_count} سؤال
+                  </span>
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    ⏱️ {formatDuration(challenge.duration_seconds)}
+                  </span>
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    👥{" "}
+                    {participantCount === undefined
+                      ? "جارٍ تحميل العدد..."
+                      : participantCount === null
+                        ? "تعذّر تحميل العدد"
+                        : `${participantCount} / ${challenge.max_participants} مشارك`}
+                  </span>
+                </div>
+
+                {challenge.ends_at && (
+                  <p className="mt-3 text-xs text-amber-200/80">
+                    نهاية التسجيل/التحدي:{" "}
+                    {new Date(challenge.ends_at).toLocaleString("ar-DZ")}
+                  </p>
+                )}
+
+                <p className="mt-4 text-xs leading-6 text-slate-500">
+                  للانضمام، أدخل كود هذا التحدي في الخانة أعلاه.
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {!loading && (
+        <button
+          type="button"
+          onClick={() => void loadChallenges()}
+          className="text-xs font-bold text-cyan-300 transition hover:text-cyan-100"
+        >
+          ↻ تحديث التحديات
+        </button>
+      )}
+    </section>
+  );
+}

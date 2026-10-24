@@ -1,0 +1,1302 @@
+
+"use client";
+
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { getSupabase } from "@/lib/supabase";
+
+const FEATURES = [
+  {
+    icon: "âš”ï¸",
+    number: "01",
+    title: "ØªØ­Ø¯ÙŽÙ‘ Ø²Ù…Ù„Ø§Ø¡Ùƒ",
+    description:
+      "Ø§Ø¯Ø®Ù„ Ø£Ø¬ÙˆØ§Ø¡ Ø§Ù„Ù…Ù†Ø§ÙØ³Ø© ÙˆØ§Ø®ØªØ¨Ø± Ù…Ø³ØªÙˆØ§Ùƒ Ø§Ù„Ø¹Ù„Ù…ÙŠ Ø£Ù…Ø§Ù… Ø·Ù„Ø§Ø¨ MARIS.",
+    glow: "group-hover:shadow-cyan-500/10",
+    accent: "text-cyan-300",
+    iconBg: "bg-cyan-400/10 border-cyan-300/20",
+  },
+  {
+    icon: "ðŸŽ¯",
+    number: "02",
+    title: "Ø§Ø®ØªÙŽØ± ØªØ®ØµØµÙƒ",
+    description:
+      "Ø±ÙƒÙ‘Ø² Ø¹Ù„Ù‰ Ø§Ù„Ù…ÙˆØ§Ø¯ ÙˆØ§Ù„Ø´Ø¹Ø¨Ø© ØªØ§Ø¹ÙƒØŒ ÙˆØ®Ù„ÙŠ ÙƒÙ„ Ø¥Ø¬Ø§Ø¨Ø© ØªÙ‚Ø±Ù‘Ø¨Ùƒ Ù„Ù‡Ø¯ÙÙƒ.",
+    glow: "group-hover:shadow-blue-500/10",
+    accent: "text-blue-300",
+    iconBg: "bg-blue-400/10 border-blue-300/20",
+  },
+  {
+    icon: "ðŸ†",
+    number: "03",
+    title: "Ø§ØµÙ†Ø¹ ØªØ±ØªÙŠØ¨Ùƒ",
+    description:
+      "Ø·ÙˆÙ‘Ø± Ù…Ø³ØªÙˆØ§ÙƒØŒ Ø­Ù‚Ù‘Ù‚ Ù†ØªØ§Ø¦Ø¬ Ø£ÙØ¶Ù„ØŒ ÙˆÙ†Ø§ÙØ³ Ø¹Ù„Ù‰ Ø§Ù„Ù…Ø±Ø§ØªØ¨ Ø§Ù„Ø£ÙˆÙ„Ù‰.",
+    glow: "group-hover:shadow-amber-500/10",
+    accent: "text-amber-300",
+    iconBg: "bg-amber-400/10 border-amber-300/20",
+  },
+];
+
+const RESOURCES = [
+  {
+    href: "/quizzes",
+    icon: "ðŸ“",
+    title: "Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø±Ø§Øª",
+    description: "Ø§Ø®ØªØ¨Ø± Ù…Ø¹Ù„ÙˆÙ…Ø§ØªÙƒ",
+    action: "Ø§Ø¨Ø¯Ø£ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©",
+    accent: "group-hover:border-cyan-300/40",
+  },
+  {
+    href: "/leaderboard",
+    icon: "ðŸ†",
+    title: "Ù„ÙˆØ­Ø© Ø§Ù„ØµØ¯Ø§Ø±Ø©",
+    description: "Ø§ÙƒØªØ´Ù ØªØ±ØªÙŠØ¨Ùƒ",
+    action: "Ø´ÙˆÙ Ø§Ù„ØªØ±ØªÙŠØ¨",
+    accent: "group-hover:border-amber-300/40",
+  },
+  {
+    href: "/courses",
+    icon: "ðŸ“š",
+    title: "Ø§Ù„Ø¯Ø±ÙˆØ³",
+    description: "Ù‚ÙˆÙ‘ÙŠ Ù…ÙƒØªØ³Ø¨Ø§ØªÙƒ",
+    action: "ÙˆØ§ØµÙ„ Ø§Ù„ØªØ¹Ù„Ù‘Ù…",
+    accent: "group-hover:border-blue-300/40",
+  },
+];
+
+type ArenaChallenge = {
+  id: string;
+  title: string;
+  description: string | null;
+  challenge_type: "personal" | "official";
+  subject_id: string;
+  stream: string | null;
+  question_count: number;
+  duration_seconds: number;
+  max_participants: number;
+  status: "open" | "in_progress" | "finished";
+  starts_at: string | null;
+  ends_at: string | null;
+};
+
+type ArenaSubject = {
+  id: string;
+  name: string;
+  stream: string | null;
+};
+
+type ParticipantCount = number | null;
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string" &&
+    error.message.trim()
+  ) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+
+type PersonalChallengeQuestion = {
+  id: string;
+  question_text: string;
+  options: unknown;
+  difficulty: string | null;
+};
+
+type PersonalChallengeResult = {
+  challenge_id: string;
+  access_code: string;
+  title: string;
+  question_count: number;
+  duration_seconds: number;
+  max_participants: number;
+  status: string;
+};
+function ArenaChallenges() {
+  const [challenges, setChallenges] = useState<ArenaChallenge[]>([]);
+  const [subjects, setSubjects] = useState<ArenaSubject[]>([]);
+  const [stream, setStream] = useState<string | null>(null);
+
+  const [accessCode, setAccessCode] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [joining, setJoining] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [participantId, setParticipantId] = useState<string | null>(null);
+  const [participantCounts, setParticipantCounts] = useState<
+    Record<string, ParticipantCount>
+  >({});
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createTitle, setCreateTitle] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
+  const [createSubjectId, setCreateSubjectId] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("10");
+  const [maxParticipants, setMaxParticipants] = useState("10");
+  const [questions, setQuestions] = useState<PersonalChallengeQuestion[]>([]);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createdChallenge, setCreatedChallenge] =
+    useState<PersonalChallengeResult | null>(null);
+  const [createError, setCreateError] = useState("");
+  const [createMessage, setCreateMessage] = useState("");
+
+  const loadChallenges = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        setError("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+        return;
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        setError(`ØªØ¹Ø°Ù‘Ø± Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„: ${authError.message}`);
+        return;
+      }
+
+      if (!user) {
+        setError("Ø³Ø¬Ù‘Ù„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¨Ø§Ø´ ØªØ´ÙˆÙ Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª Ø§Ù„Ù…ØªØ§Ø­Ø©.");
+        return;
+      }
+
+      const [profileResult, challengesResult, subjectsResult] =
+        await Promise.all([
+          supabase
+            .from("profiles")
+            .select("stream")
+            .eq("id", user.id)
+            .maybeSingle(),
+
+          supabase
+            .from("arena_challenges")
+            .select(
+              "id,title,description,challenge_type,subject_id,stream,question_count,duration_seconds,max_participants,status,starts_at,ends_at"
+            )
+            .eq("status", "open")
+            .order("created_at", { ascending: false }),
+
+          supabase.from("subjects").select("id,name,stream").order("name"),
+        ]);
+
+      if (profileResult.error) {
+        setError(`ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ Ù…Ù„ÙÙƒ Ø§Ù„Ø´Ø®ØµÙŠ: ${profileResult.error.message}`);
+        return;
+      }
+
+      if (challengesResult.error) {
+        setError(`ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª: ${challengesResult.error.message}`);
+        return;
+      }
+
+      if (subjectsResult.error) {
+        setError(`ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…ÙˆØ§Ø¯: ${subjectsResult.error.message}`);
+        return;
+      }
+
+      const loadedChallenges = (challengesResult.data ??
+        []) as ArenaChallenge[];
+
+      setStream(profileResult.data?.stream ?? null);
+      setChallenges(loadedChallenges);
+      setSubjects((subjectsResult.data ?? []) as ArenaSubject[]);
+
+      const countResults = await Promise.all(
+        loadedChallenges.map(async (challenge) => {
+          const { count, error: countError } = await supabase
+            .from("arena_participants")
+            .select("id", { count: "exact", head: true })
+            .eq("challenge_id", challenge.id);
+
+          if (countError) {
+            console.error(
+              `Arena participant count error (${challenge.id}):`,
+              countError
+            );
+          }
+
+          return {
+            challengeId: challenge.id,
+            count: countError ? null : (count ?? 0),
+          };
+        })
+      );
+
+      setParticipantCounts(
+        Object.fromEntries(
+          countResults.map(({ challengeId, count }) => [
+            challengeId,
+            count,
+          ])
+        )
+      );
+    } catch (caughtError: unknown) {
+      console.error("Arena load error:", caughtError);
+      setError(
+        getErrorMessage(caughtError, "ÙˆÙ‚Ø¹ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª.")
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadChallenges();
+  }, [loadChallenges]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadQuestions() {
+      setQuestions([]);
+      setSelectedQuestionIds([]);
+      setCreateError("");
+
+      if (!createSubjectId) return;
+
+      setLoadingQuestions(true);
+
+      try {
+        const supabase = getSupabase();
+
+        if (!supabase) {
+          setCreateError("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+          return;
+        }
+
+        const selectedSubject = subjects.find(
+          (subject) => subject.id === createSubjectId
+        );
+
+        const questionStream = selectedSubject?.stream ?? stream;
+
+        const { data, error: questionsError } = await supabase.rpc(
+          "arena_get_personal_challenge_questions",
+          {
+            p_subject_id: createSubjectId,
+            p_stream: questionStream,
+          }
+        );
+
+        if (questionsError) {
+          console.error("Arena question loading error:", questionsError);
+
+          if (!cancelled) {
+            setCreateError(
+              `ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø£Ø³Ø¦Ù„Ø©: ${questionsError.message}`
+            );
+          }
+
+          return;
+        }
+
+        if (!cancelled) {
+          setQuestions((data ?? []) as PersonalChallengeQuestion[]);
+        }
+      } catch (caughtError: unknown) {
+        if (!cancelled) {
+          setCreateError(
+            getErrorMessage(caughtError, "ÙˆÙ‚Ø¹ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø£Ø³Ø¦Ù„Ø©.")
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingQuestions(false);
+        }
+      }
+    }
+
+    void loadQuestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createSubjectId, stream, subjects]);
+
+  const availableChallenges = challenges.filter((challenge) => {
+    if (!challenge.stream) return true;
+    return !!stream && challenge.stream.trim() === stream.trim();
+  });
+
+  const availableSubjects = subjects.filter(
+    (subject) =>
+      !stream ||
+      !subject.stream ||
+      subject.stream.trim() === stream.trim()
+  );
+
+  async function joinChallenge(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+    setParticipantId(null);
+
+    const code = accessCode.trim();
+
+    if (!code) {
+      setError("Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„ØªØ­Ø¯ÙŠ Ø£ÙˆÙ„Ù‹Ø§.");
+      return;
+    }
+
+    setJoining(true);
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        setError("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+        return;
+      }
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) {
+        setError(`ØªØ¹Ø°Ù‘Ø± Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„: ${authError.message}`);
+        return;
+      }
+
+      if (!user) {
+        setError("Ø³Ø¬Ù‘Ù„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ù‚Ø¨Ù„ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ù„Ù„ØªØ­Ø¯ÙŠ.");
+        return;
+      }
+
+      const { data, error: joinError } = await supabase.rpc(
+        "arena_join_challenge",
+        { p_access_code: code }
+      );
+
+      if (joinError) {
+        console.error("Arena join RPC error:", joinError);
+        setError(`ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…: ${joinError.message}`);
+        return;
+      }
+
+      if (!data) {
+        setError("Ù…Ø§ ÙˆØµÙ„Ù†Ø§Ø´ ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…. Ø¹Ø§ÙˆØ¯ Ø­Ø§ÙˆÙ„.");
+        return;
+      }
+
+      const newParticipantId = String(data);
+
+      window.location.href = `/arena/play?participant=${encodeURIComponent(
+        newParticipantId
+      )}`;
+    } catch (caughtError: unknown) {
+      console.error("Arena join unexpected error:", caughtError);
+      setError(
+        `ÙˆÙ‚Ø¹ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…: ${getErrorMessage(
+          caughtError,
+          "Ø®Ø·Ø£ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ."
+        )}`
+      );
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  function toggleQuestion(questionId: string) {
+    setSelectedQuestionIds((current) => {
+      if (current.includes(questionId)) {
+        return current.filter((id) => id !== questionId);
+      }
+
+      if (current.length >= 100) {
+        setCreateError("ØªÙ‚Ø¯Ø± ØªØ®ØªØ§Ø± Ø­ØªÙ‰ 100 Ø³Ø¤Ø§Ù„ ÙÙ‚Ø·.");
+        return current;
+      }
+
+      setCreateError("");
+      return [...current, questionId];
+    });
+  }
+
+  async function createPersonalChallenge(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+    setCreateError("");
+    setCreateMessage("");
+    setCreatedChallenge(null);
+
+    const title = createTitle.trim();
+    const description = createDescription.trim();
+    const duration = Number(durationMinutes);
+    const maximum = Number(maxParticipants);
+
+    if (title.length < 3 || title.length > 100) {
+      setCreateError("Ø¹Ù†ÙˆØ§Ù† Ø§Ù„ØªØ­Ø¯ÙŠ Ù„Ø§Ø²Ù… ÙŠÙƒÙˆÙ† Ø¨ÙŠÙ† 3 Ùˆ100 Ø­Ø±Ù.");
+      return;
+    }
+
+    if (!createSubjectId) {
+      setCreateError("Ø§Ø®ØªØ§Ø± Ø§Ù„Ù…Ø§Ø¯Ø© Ø£ÙˆÙ„Ù‹Ø§.");
+      return;
+    }
+
+    if (!Number.isInteger(duration) || duration < 1 || duration > 120) {
+      setCreateError("Ø§Ù„Ù…Ø¯Ø© Ù„Ø§Ø²Ù… ØªÙƒÙˆÙ† Ø¨ÙŠÙ† Ø¯Ù‚ÙŠÙ‚Ø© Ùˆ120 Ø¯Ù‚ÙŠÙ‚Ø©.");
+      return;
+    }
+
+    if (!Number.isInteger(maximum) || maximum < 2 || maximum > 100) {
+      setCreateError("Ø¹Ø¯Ø¯ Ø§Ù„Ù…Ø´Ø§Ø±ÙƒÙŠÙ† Ù„Ø§Ø²Ù… ÙŠÙƒÙˆÙ† Ø¨ÙŠÙ† 2 Ùˆ100.");
+      return;
+    }
+
+    if (selectedQuestionIds.length === 0) {
+      setCreateError("Ø§Ø®ØªØ§Ø± Ø³Ø¤Ø§Ù„Ù‹Ø§ ÙˆØ§Ø­Ø¯Ù‹Ø§ Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„.");
+      return;
+    }
+
+    if (selectedQuestionIds.length > questions.length) {
+      setCreateError("Ø¹Ø§ÙˆØ¯ Ø§Ø®ØªØ§Ø± Ø§Ù„Ø£Ø³Ø¦Ù„Ø© Ø§Ù„Ù…ØªØ§Ø­Ø©.");
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        setCreateError("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+        return;
+      }
+
+      const selectedSubject = subjects.find(
+        (subject) => subject.id === createSubjectId
+      );
+
+      const { data, error: creationError } = await supabase.rpc(
+        "arena_create_personal_challenge",
+        {
+          p_title: title,
+          p_description: description || null,
+          p_subject_id: createSubjectId,
+          p_stream: selectedSubject?.stream ?? stream,
+          p_duration_seconds: duration * 60,
+          p_max_participants: maximum,
+          p_question_ids: selectedQuestionIds,
+        }
+      );
+
+      if (creationError) {
+        console.error("Arena challenge creation error:", creationError);
+        setCreateError(`ØªØ¹Ø°Ù‘Ø± Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„ØªØ­Ø¯ÙŠ: ${creationError.message}`);
+        return;
+      }
+
+      const result = data as PersonalChallengeResult | null;
+
+      if (!result?.access_code) {
+        console.error("Unexpected challenge creation response:", data);
+        setCreateError(
+          "Ø§Ù„ØªØ­Ø¯ÙŠ Ø±Ø¨Ù…Ø§ ØªØ³Ø¬Ù‘Ù„ØŒ Ù„ÙƒÙ† Ù…Ø§ ÙˆØµÙ„Ù†Ø§Ø´ ÙƒÙˆØ¯ Ø§Ù„Ù…Ø´Ø§Ø±ÙƒØ©. Ø­Ø¯Ù‘Ø« Ø§Ù„ØµÙØ­Ø© ÙˆØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù‚Ø§Ø¦Ù…Ø©."
+        );
+        return;
+      }
+
+      setCreatedChallenge(result);
+      setCreateMessage("ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„ØªØ­Ø¯ÙŠ Ø¨Ù†Ø¬Ø§Ø­! Ù‡Ø°Ø§ Ù‡Ùˆ Ø§Ù„ÙƒÙˆØ¯ Ø§Ù„Ø®Ø§Øµ Ø¨Ø£ØµØ­Ø§Ø¨Ùƒ.");
+      setCreateTitle("");
+      setCreateDescription("");
+      setCreateSubjectId("");
+      setSelectedQuestionIds([]);
+      setQuestions([]);
+
+      await loadChallenges();
+    } catch (caughtError: unknown) {
+      console.error("Arena challenge creation error:", caughtError);
+      setCreateError(
+        getErrorMessage(caughtError, "ÙˆÙ‚Ø¹ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„ØªØ­Ø¯ÙŠ.")
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function formatDuration(seconds: number) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (minutes === 0) return `${seconds} Ø«Ø§Ù†ÙŠØ©`;
+    if (remainingSeconds === 0) return `${minutes} Ø¯Ù‚ÙŠÙ‚Ø©`;
+
+    return `${minutes} Ø¯ Ùˆ ${remainingSeconds} Ø«`;
+  }
+
+  const inputClass =
+    "min-h-12 w-full rounded-xl border border-white/10 bg-[#061321] px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-300/40";
+
+  return (
+    <section
+      id="arena-challenges"
+      className="space-y-5 rounded-3xl border border-cyan-300/15 bg-[#071727]/80 p-5 sm:p-7"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="mb-2 text-[10px] font-black tracking-[0.2em] text-cyan-300 sm:text-xs">
+            LIVE CHALLENGES
+          </p>
+
+          <h2 className="text-xl font-black text-white sm:text-2xl">
+            âš”ï¸ Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª Ø§Ù„Ù…ØªØ§Ø­Ø©
+          </h2>
+
+          <p className="mt-2 text-sm leading-7 text-slate-400">
+            Ø§ÙƒØªØ´Ù Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª Ø§Ù„Ù…ÙØªÙˆØ­Ø© Ù„Ø´Ø¹Ø¨ØªÙƒØŒ Ø£Ùˆ Ø§Ù†Ø¶Ù…Ù‘ Ù…Ø¨Ø§Ø´Ø±Ø© Ø¨Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ø§Ù„ÙƒÙˆØ¯.
+          </p>
+
+          {stream && (
+            <span className="mt-3 inline-flex rounded-full border border-cyan-300/15 bg-cyan-300/[0.06] px-3 py-1.5 text-xs font-bold text-cyan-200">
+              Ø´Ø¹Ø¨ØªÙƒ: {stream}
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setShowCreateForm((current) => !current);
+            setCreateError("");
+          }}
+          className="min-h-12 shrink-0 rounded-xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-5 py-3 text-sm font-black text-[#052033] transition hover:brightness-110"
+        >
+          {showCreateForm ? "Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ù†Ù…ÙˆØ°Ø¬ âœ•" : "ï¼‹ Ø§ØµÙ†Ø¹ ØªØ­Ø¯Ù‘ÙŠÙƒ"}
+        </button>
+      </div>
+
+      {createdChallenge && (
+        <div className="rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.06] p-5">
+          <p className="text-lg font-black text-emerald-200">
+            ðŸŽ‰ {createMessage}
+          </p>
+
+          <p className="mt-2 text-sm text-slate-300">
+            {createdChallenge.title}
+          </p>
+
+          <p className="mt-4 text-xs text-emerald-100/70">
+            ÙƒÙˆØ¯ Ø§Ù„Ù…Ø´Ø§Ø±ÙƒØ© â€” Ø§Ø¨Ø¹Ø«Ù‡ ØºÙŠØ± Ù„Ù„Ø£Ø´Ø®Ø§Øµ Ø§Ù„Ù„ÙŠ Ø­Ø§Ø¨Ù‘Ù‡Ù… ÙŠÙ†Ø¶Ù…Ù‘ÙˆØ§:
+          </p>
+
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row">
+            <code
+              dir="ltr"
+              className="flex min-h-14 flex-1 items-center justify-center rounded-xl border border-emerald-300/20 bg-black/25 px-4 text-2xl font-black tracking-[0.2em] text-white"
+            >
+              {createdChallenge.access_code}
+            </code>
+
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(createdChallenge.access_code)
+                  .then(() => setCreateMessage("ØªÙ… Ù†Ø³Ø® Ø§Ù„ÙƒÙˆØ¯ Ø¨Ù†Ø¬Ø§Ø­! Ø§Ø¨Ø¹Ø«Ù‡ Ù„ØµØ­Ø§Ø¨Ùƒ."))
+                  .catch(() =>
+                    setCreateError("Ù…Ø§ Ù‚Ø¯Ø±Ù†Ø§Ø´ Ù†Ù†Ø³Ø®Ùˆ Ø§Ù„ÙƒÙˆØ¯. Ø§Ù†Ø³Ø®Ùˆ ÙŠØ¯ÙˆÙŠÙ‹Ø§.")
+                  );
+              }}
+              className="min-h-12 rounded-xl border border-emerald-300/25 px-5 py-3 text-sm font-bold text-emerald-200 transition hover:bg-emerald-300/10"
+            >
+              Ù†Ø³Ø® Ø§Ù„ÙƒÙˆØ¯
+            </button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+            <span className="rounded-lg bg-black/20 px-3 py-2">
+              ðŸ“ {createdChallenge.question_count} Ø³Ø¤Ø§Ù„
+            </span>
+            <span className="rounded-lg bg-black/20 px-3 py-2">
+              â±ï¸ {formatDuration(createdChallenge.duration_seconds)}
+            </span>
+            <span className="rounded-lg bg-black/20 px-3 py-2">
+              ðŸ‘¥ Ø­ØªÙ‰ {createdChallenge.max_participants} Ù…Ø´Ø§Ø±Ùƒ
+            </span>
+          </div>
+        </div>
+      )}
+
+      {showCreateForm && (
+        <form
+          onSubmit={createPersonalChallenge}
+          className="space-y-5 rounded-2xl border border-cyan-300/15 bg-black/15 p-4 sm:p-6"
+        >
+          <div>
+            <p className="text-lg font-black text-white">
+              ðŸŒŠ Ø§ØµÙ†Ø¹ ØªØ­Ø¯Ù‘ÙŠÙƒ Ø§Ù„Ø®Ø§Øµ
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Ø§Ø®ØªØ§Ø± Ø§Ù„Ù…Ø§Ø¯Ø© ÙˆØ§Ù„Ø£Ø³Ø¦Ù„Ø© ÙˆØ§Ù„ÙˆÙ‚ØªØŒ ÙˆØ¨Ø¹Ø¯Ù‡Ø§ Ø§Ø¨Ø¹Ø« Ø§Ù„ÙƒÙˆØ¯ Ù„ØµØ­Ø§Ø¨Ùƒ.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                Ø¹Ù†ÙˆØ§Ù† Ø§Ù„ØªØ­Ø¯ÙŠ *
+              </span>
+              <input
+                required
+                minLength={3}
+                maxLength={100}
+                value={createTitle}
+                onChange={(event) => setCreateTitle(event.target.value)}
+                placeholder="Ù…Ø«Ø§Ù„: ØªØ­Ø¯ÙŠ Ø§Ù„ÙÙŠØ²ÙŠØ§Ø¡"
+                className={inputClass}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                Ø§Ù„Ù…Ø§Ø¯Ø© *
+              </span>
+              <select
+                required
+                value={createSubjectId}
+                onChange={(event) => setCreateSubjectId(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">Ø§Ø®ØªØ§Ø± Ø§Ù„Ù…Ø§Ø¯Ø©</option>
+                {availableSubjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                    {subject.stream ? ` â€” ${subject.stream}` : ""}
+                  </option>
+                ))}
+              </select>
+              {availableSubjects.length === 0 && (
+                <span className="mt-2 block text-xs text-amber-200">
+                  Ù…Ø§ Ù„Ù‚ÙŠÙ†Ø§Ø´ Ù…ÙˆØ§Ø¯ Ù…Ù†Ø§Ø³Ø¨Ø© Ù„Ø´Ø¹Ø¨ØªÙƒ.
+                </span>
+              )}
+            </label>
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold text-slate-200">
+              ÙˆØµÙ Ø§Ù„ØªØ­Ø¯ÙŠ
+            </span>
+            <textarea
+              value={createDescription}
+              onChange={(event) => setCreateDescription(event.target.value)}
+              maxLength={500}
+              rows={3}
+              placeholder="Ø§ÙƒØªØ¨ ÙˆØµÙÙ‹Ø§ Ù‚ØµÙŠØ±Ù‹Ø§ Ù„Ù„ØªØ­Ø¯ÙŠ (Ø§Ø®ØªÙŠØ§Ø±ÙŠ)..."
+              className={inputClass}
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                Ù…Ø¯Ø© Ø§Ù„ØªØ­Ø¯ÙŠ Ø¨Ø§Ù„Ø¯Ù‚Ø§Ø¦Ù‚ *
+              </span>
+              <input
+                required
+                type="number"
+                min={1}
+                max={120}
+                value={durationMinutes}
+                onChange={(event) => setDurationMinutes(event.target.value)}
+                className={inputClass}
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Ù…Ù† Ø¯Ù‚ÙŠÙ‚Ø© Ø­ØªÙ‰ Ø³Ø§Ø¹ØªÙŠÙ†.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-bold text-slate-200">
+                Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù„Ù„Ù…Ø´Ø§Ø±ÙƒÙŠÙ† *
+              </span>
+              <input
+                required
+                type="number"
+                min={2}
+                max={100}
+                value={maxParticipants}
+                onChange={(event) => setMaxParticipants(event.target.value)}
+                className={inputClass}
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Ù…Ù† 2 Ø­ØªÙ‰ 100 Ù…Ø´Ø§Ø±Ùƒ.
+              </span>
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-black text-white">
+                ðŸ“ Ø§Ø®ØªØ§Ø± Ø§Ù„Ø£Ø³Ø¦Ù„Ø© *
+              </h3>
+              <span className="rounded-full border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-1.5 text-xs font-bold text-cyan-200">
+                Ø§Ø®ØªØ±Øª {selectedQuestionIds.length} Ø³Ø¤Ø§Ù„
+              </span>
+            </div>
+
+            {!createSubjectId ? (
+              <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-slate-400">
+                Ø§Ø®ØªØ§Ø± Ø§Ù„Ù…Ø§Ø¯Ø© Ø£ÙˆÙ„Ù‹Ø§ Ø¨Ø§Ø´ ØªØ¸Ù‡Ø±Ù„Ùƒ Ø§Ù„Ø£Ø³Ø¦Ù„Ø© Ø§Ù„Ù…ØªØ§Ø­Ø©.
+              </p>
+            ) : loadingQuestions ? (
+              <p className="rounded-xl border border-white/10 p-4 text-sm text-slate-400">
+                Ø¬Ø§Ø±Ù ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø£Ø³Ø¦Ù„Ø©...
+              </p>
+            ) : questions.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-400">
+                Ù…Ø§ ÙƒØ§ÙŠÙ† Ø­ØªÙ‰ Ø³Ø¤Ø§Ù„ Ù…Ù†Ø´ÙˆØ± ÙˆÙ…Ù†Ø§Ø³Ø¨ Ù„Ù‡Ø§Ø° Ø§Ù„Ù…Ø§Ø¯Ø© ÙˆØ§Ù„Ø´Ø¹Ø¨Ø© Ø­Ø§Ù„ÙŠÙ‹Ø§.
+              </p>
+            ) : (
+              <div className="max-h-96 space-y-2 overflow-y-auto rounded-xl border border-white/[0.08] p-2">
+                {questions.map((question, index) => {
+                  const checked = selectedQuestionIds.includes(question.id);
+
+                  return (
+                    <label
+                      key={question.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+                        checked
+                          ? "border-cyan-300/30 bg-cyan-300/[0.07]"
+                          : "border-white/[0.06] bg-white/[0.02] hover:border-white/15"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleQuestion(question.id)}
+                        className="mt-1 h-4 w-4 accent-cyan-300"
+                      />
+
+                      <span className="min-w-0 flex-1">
+                        <span className="mb-1 block text-[10px] font-bold text-cyan-300">
+                          Ø§Ù„Ø³Ø¤Ø§Ù„ {index + 1}
+                          {question.difficulty
+                            ? ` Â· ${
+                                question.difficulty === "easy"
+                                  ? "Ø³Ù‡Ù„"
+                                  : question.difficulty === "hard"
+                                    ? "ØµØ¹Ø¨"
+                                    : question.difficulty === "medium"
+                                      ? "Ù…ØªÙˆØ³Ø·"
+                                      : question.difficulty
+                              }`
+                            : ""}
+                        </span>
+                        <span className="block whitespace-pre-wrap break-words text-sm leading-6 text-slate-200">
+                          {question.question_text}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <p className="text-xs leading-5 text-slate-500">
+              Ø§Ù„Ø£Ø³Ø¦Ù„Ø© Ø§Ù„Ù…Ø¹Ø±ÙˆØ¶Ø© Ù‡ÙŠ Ø§Ù„Ø£Ø³Ø¦Ù„Ø© Ø§Ù„Ù…Ù†Ø´ÙˆØ±Ø© ÙÙ‚Ø·ØŒ ÙˆØ§Ù„Ø¥Ø¬Ø§Ø¨Ø§Øª Ø§Ù„ØµØ­ÙŠØ­Ø© Ù…Ø§
+              ØªØ¸Ù‡Ø±Ø´ ÙÙŠ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø§Ø®ØªÙŠØ§Ø±.
+            </p>
+          </div>
+
+          {createError && (
+            <p
+              role="alert"
+              className="break-words rounded-xl border border-red-400/20 bg-red-400/[0.06] p-3 text-sm leading-6 text-red-200"
+            >
+              {createError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={
+              creating ||
+              loadingQuestions ||
+              !createSubjectId ||
+              selectedQuestionIds.length === 0
+            }
+            className="min-h-12 w-full rounded-xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-5 py-3 text-sm font-black text-[#052033] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating
+              ? "Ø¬Ø§Ø±Ù Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„ØªØ­Ø¯ÙŠ..."
+              : `âš”ï¸ Ø£Ù†Ø´Ø¦ Ø§Ù„ØªØ­Ø¯ÙŠ (${selectedQuestionIds.length} Ø³Ø¤Ø§Ù„)`}
+          </button>
+        </form>
+      )}
+
+      <form
+        onSubmit={joinChallenge}
+        className="flex flex-col gap-3 sm:flex-row"
+      >
+        <input
+          value={accessCode}
+          onChange={(event) => setAccessCode(event.target.value)}
+          placeholder="Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„ØªØ­Ø¯ÙŠ..."
+          aria-label="ÙƒÙˆØ¯ Ø§Ù„ØªØ­Ø¯ÙŠ"
+          autoComplete="off"
+          maxLength={100}
+          className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-300/40"
+        />
+
+        <button
+          type="submit"
+          disabled={joining || !accessCode.trim()}
+          className="min-h-12 rounded-xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-6 text-sm font-black text-[#052033] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {joining ? "Ø¬Ø§Ø±Ù Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…..." : "Ø§Ù†Ø¶Ù…Ù‘ Ù„Ù„ØªØ­Ø¯ÙŠ â†"}
+        </button>
+      </form>
+
+      {error && (
+        <p
+          role="alert"
+          className="break-words rounded-xl border border-red-400/20 bg-red-400/[0.06] p-3 text-sm leading-6 text-red-200"
+        >
+          {error}
+        </p>
+      )}
+
+      {message && (
+        <div
+          role="status"
+          className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4 text-sm leading-6 text-emerald-200"
+        >
+          <p>{message}</p>
+          {participantId && (
+            <p dir="ltr" className="mt-2 break-all font-mono text-xs">
+              {participantId}
+            </p>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-2xl border border-white/[0.07] p-6 text-center text-sm text-slate-400">
+          Ø¬Ø§Ø±Ù ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª...
+        </div>
+      ) : availableChallenges.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+          <p className="text-3xl">ðŸŒŠ</p>
+          <p className="mt-3 font-bold text-white">
+            Ù…Ø§ ÙƒØ§ÙŠÙ† Ø­ØªÙ‰ ØªØ­Ø¯ÙŠ Ù…ÙØªÙˆØ­ Ù„Ø´Ø¹Ø¨ØªÙƒ Ø­Ø§Ù„ÙŠÙ‹Ø§
+          </p>
+          <p className="mt-2 text-xs leading-6 text-slate-400">
+            ØªÙ‚Ø¯Ø± ØªÙ†Ø´Ø¦ ØªØ­Ø¯ÙŠÙƒ Ø§Ù„Ø®Ø§Øµ Ø£Ùˆ ØªØ³ØªØ¹Ù…Ù„ ÙƒÙˆØ¯ Ø¹Ø·Ø§Ù‡ÙˆÙ„Ùƒ Ø§Ù„Ù…Ù†Ø¸Ù‘Ù….
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadChallenges()}
+            className="mt-4 rounded-xl border border-cyan-300/20 px-4 py-2 text-xs font-bold text-cyan-200 transition hover:bg-cyan-300/10"
+          >
+            ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù‚Ø§Ø¦Ù…Ø© â†»
+          </button>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {availableChallenges.map((challenge) => {
+            const subject = subjects.find(
+              (item) => item.id === challenge.subject_id
+            );
+
+            const participantCount = participantCounts[challenge.id];
+
+            return (
+              <article
+                key={challenge.id}
+                className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5 transition hover:border-cyan-300/25"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-xl">
+                    {challenge.challenge_type === "personal" ? "ðŸ¤" : "âš”ï¸"}
+                  </div>
+
+                  <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.06] px-3 py-1 text-[10px] font-bold text-emerald-200">
+                    {challenge.challenge_type === "personal"
+                      ? "ØªØ­Ø¯ÙŠ Ø´Ø®ØµÙŠ"
+                      : "ØªØ­Ø¯ÙŠ Ø±Ø³Ù…ÙŠ"}
+                  </span>
+                </div>
+
+                <h3 className="mt-4 text-lg font-black text-white">
+                  {challenge.title}
+                </h3>
+
+                {challenge.description && (
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
+                    {challenge.description}
+                  </p>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    ðŸ“š {subject?.name ?? "Ù…Ø§Ø¯Ø©"}
+                  </span>
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    ðŸ“ {challenge.question_count} Ø³Ø¤Ø§Ù„
+                  </span>
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    â±ï¸ {formatDuration(challenge.duration_seconds)}
+                  </span>
+                  <span className="rounded-lg bg-white/[0.05] px-3 py-2">
+                    ðŸ‘¥{" "}
+                    {participantCount === undefined
+                      ? "Ø¬Ø§Ø±Ù ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¹Ø¯Ø¯..."
+                      : participantCount === null
+                        ? "ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¹Ø¯Ø¯"
+                        : `${participantCount} / ${challenge.max_participants} Ù…Ø´Ø§Ø±Ùƒ`}
+                  </span>
+                </div>
+
+                {challenge.ends_at && (
+                  <p className="mt-3 text-xs text-amber-200/80">
+                    Ù†Ù‡Ø§ÙŠØ© Ø§Ù„ØªØ³Ø¬ÙŠÙ„/Ø§Ù„ØªØ­Ø¯ÙŠ:{" "}
+                    {new Date(challenge.ends_at).toLocaleString("ar-DZ")}
+                  </p>
+                )}
+
+                <p className="mt-4 text-xs leading-6 text-slate-500">
+                  Ù„Ù„Ø§Ù†Ø¶Ù…Ø§Ù…ØŒ Ø£Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ù‡Ø°Ø§ Ø§Ù„ØªØ­Ø¯ÙŠ ÙÙŠ Ø§Ù„Ø®Ø§Ù†Ø© Ø£Ø¹Ù„Ø§Ù‡.
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {!loading && (
+        <button
+          type="button"
+          onClick={() => void loadChallenges()}
+          className="text-xs font-bold text-cyan-300 transition hover:text-cyan-100"
+        >
+          â†» ØªØ­Ø¯ÙŠØ« Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª
+        </button>
+      )}
+    </section>
+  );
+}
+
+export default function ArenaPage() {
+  return (
+    <main
+      dir="rtl"
+      className="relative isolate min-h-screen overflow-hidden pb-12 text-slate-100"
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      >
+        <div className="absolute -top-40 -right-32 h-96 w-96 rounded-full bg-cyan-500/[0.07] blur-[100px]" />
+        <div className="absolute top-[35%] -left-40 h-96 w-96 rounded-full bg-blue-600/[0.08] blur-[110px]" />
+        <div className="absolute bottom-0 right-1/3 h-80 w-80 rounded-full bg-indigo-500/[0.05] blur-[100px]" />
+      </div>
+
+      <div className="mx-auto max-w-7xl space-y-8 px-3 sm:space-y-10 sm:px-5 lg:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 backdrop-blur-xl sm:px-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/20 bg-gradient-to-br from-cyan-300/20 to-blue-500/10 text-2xl">
+              ðŸ‹
+            </div>
+
+            <div>
+              <p className="text-sm font-black tracking-wide text-white">
+                MARIS <span className="text-cyan-300">ARENA PRO</span>
+              </p>
+              <p className="mt-0.5 text-[10px] font-medium tracking-[0.18em] text-slate-500">
+                THE BATTLE OF KNOWLEDGE
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/leaderboard"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-300/15 bg-amber-300/[0.06] px-3 text-xs font-bold text-amber-200 transition hover:border-amber-300/30 hover:bg-amber-300/10 sm:px-4 sm:text-sm"
+          >
+            <span>ðŸ†</span>
+            <span>Ù„ÙˆØ­Ø© Ø§Ù„ØµØ¯Ø§Ø±Ø©</span>
+            <span aria-hidden="true">â†</span>
+          </Link>
+        </div>
+
+        <section className="relative isolate overflow-hidden rounded-[28px] border border-cyan-300/15 bg-[#071727] shadow-2xl shadow-cyan-950/20 sm:rounded-[36px]">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+          >
+            <div className="absolute -top-28 left-0 h-80 w-80 rounded-full bg-cyan-400/10 blur-[90px]" />
+            <div className="absolute -bottom-40 right-1/4 h-96 w-96 rounded-full bg-blue-500/10 blur-[100px]" />
+            <div className="absolute inset-0 opacity-[0.055] [background-image:linear-gradient(rgba(148,220,255,0.5)_1px,transparent_1px),linear-gradient(90deg,rgba(148,220,255,0.5)_1px,transparent_1px)] [background-size:42px_42px]" />
+            <div className="absolute -left-10 top-10 h-48 w-48 rounded-full border border-cyan-300/10 sm:h-72 sm:w-72" />
+            <div className="absolute -left-2 top-20 h-32 w-32 rounded-full border border-cyan-300/[0.07] sm:h-56 sm:w-56" />
+          </div>
+
+          <div className="relative grid items-center gap-8 p-5 sm:p-8 md:grid-cols-[1.2fr_0.8fr] md:gap-5 md:p-12 lg:p-14">
+            <div className="relative z-10">
+              <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/[0.07] px-3.5 py-2 text-xs font-bold text-cyan-200 sm:text-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-50" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-300" />
+                </span>
+                <span>Ø¹Ù‚Ù„Ùƒ Ù‡Ùˆ Ø³Ù„Ø§Ø­Ùƒ Ø§Ù„Ø£Ù‚ÙˆÙ‰</span>
+              </div>
+
+              <p className="mb-3 text-xs font-bold tracking-[0.22em] text-cyan-300/70 sm:text-sm">
+                WELCOME TO THE ARENA
+              </p>
+
+              <h1 className="max-w-2xl text-4xl font-black leading-[1.35] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                Ù‡Ù†Ø§ ØªØ¨Ø¯Ø£
+                <span className="block bg-gradient-to-l from-cyan-200 via-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                  Ø£Ø³Ø·ÙˆØ±ØªÙƒ Ø§Ù„Ø¹Ù„Ù…ÙŠØ©
+                </span>
+              </h1>
+
+              <p className="mt-5 max-w-xl text-sm leading-8 text-slate-300 sm:text-base sm:leading-9">
+                Ù…Ø±Ø­Ø¨Ù‹Ø§ Ø¨ÙŠÙƒ ÙÙŠ Ø³Ø§Ø­Ø© MARIS ARENA PROØŒ ÙˆÙŠÙ† Ø§Ù„Ù…Ø¹Ø±ÙØ© ØªØªØ­ÙˆÙ‘Ù„
+                Ù„Ù…Ù†Ø§ÙØ³Ø©ØŒ ÙˆÙƒÙ„ Ø³Ø¤Ø§Ù„ ÙŠØ¹Ø·ÙŠÙƒ ÙØ±ØµØ© Ø¨Ø§Ø´ ØªØ«Ø¨Øª Ù‚Ø¯Ø±Ø§ØªÙƒ ÙˆØªÙ‚Ø±Ø¨ Ø£ÙƒØ«Ø±
+                Ù…Ù† Ù‡Ø¯ÙÙƒ ÙÙŠ Ø§Ù„Ø¨ÙƒØ§Ù„ÙˆØ±ÙŠØ§.
+              </p>
+
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <a
+                  href="#arena-challenges"
+                  className="group inline-flex min-h-13 items-center justify-center gap-3 rounded-2xl bg-gradient-to-l from-cyan-300 to-cyan-400 px-6 py-3.5 text-sm font-black text-[#052033] shadow-lg shadow-cyan-500/15 transition duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-cyan-400/20"
+                >
+                  <span>âš¡</span>
+                  <span>Ø§ÙƒØªØ´Ù Ø§Ù„ØªØ­Ø¯ÙŠØ§Øª</span>
+                  <span className="transition-transform group-hover:-translate-x-1">
+                    â†
+                  </span>
+                </a>
+
+                <Link
+                  href="/courses"
+                  className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-3.5 text-sm font-bold text-white transition hover:border-cyan-300/25 hover:bg-white/[0.07]"
+                >
+                  <span>ðŸ“š</span>
+                  <span>Ø­Ø¶Ù‘Ø± Ø±ÙˆØ­Ùƒ</span>
+                </Link>
+              </div>
+
+              <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-white/[0.08] pt-5 text-xs text-slate-400 sm:text-sm">
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-cyan-300">âœ¦</span>
+                  ØªØ¹Ù„Ù‘Ù… Ø¨Ø°ÙƒØ§Ø¡
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-blue-300">âœ¦</span>
+                  Ù†Ø§ÙØ³ Ø¨Ø´Ø±Ù
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="text-amber-300">âœ¦</span>
+                  Ø­Ù‚Ù‘Ù‚ Ù‡Ø¯ÙÙƒ
+                </span>
+              </div>
+            </div>
+
+            <div className="relative mx-auto flex min-h-56 w-full max-w-sm items-center justify-center sm:min-h-72 md:min-h-80">
+              <div
+                aria-hidden="true"
+                className="absolute h-48 w-48 rounded-full border border-cyan-300/[0.12] sm:h-64 sm:w-64"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute h-36 w-36 rounded-full border border-dashed border-cyan-300/20 sm:h-52 sm:w-52"
+              />
+              <div className="absolute h-40 w-40 rounded-full bg-cyan-400/[0.12] blur-3xl sm:h-56 sm:w-56" />
+              <div className="relative flex h-36 w-36 items-center justify-center rounded-[34px] border border-cyan-200/20 bg-gradient-to-br from-cyan-300/[0.16] via-blue-400/[0.08] to-transparent shadow-2xl shadow-cyan-950/30 backdrop-blur-sm sm:h-44 sm:w-44 sm:rounded-[42px]">
+                <div className="absolute inset-2 rounded-[27px] border border-white/[0.06] sm:rounded-[35px]" />
+                <span className="select-none text-7xl drop-shadow-[0_0_28px_rgba(103,232,249,0.25)] sm:text-8xl">
+                  ðŸ‹
+                </span>
+              </div>
+
+              <div className="absolute right-0 top-5 rounded-2xl border border-white/10 bg-[#0c2135]/90 px-3.5 py-3 shadow-xl backdrop-blur-xl sm:right-1 sm:top-8 sm:px-4">
+                <p className="text-[10px] text-slate-400 sm:text-xs">
+                  Ø³Ù„Ø§Ø­Ùƒ Ø§Ù„Ø£Ù‚ÙˆÙ‰
+                </p>
+                <p className="mt-1 text-sm font-black text-cyan-200 sm:text-base">
+                  ðŸ§  Ø§Ù„Ù…Ø¹Ø±ÙØ©
+                </p>
+              </div>
+
+              <div className="absolute bottom-4 left-0 rounded-2xl border border-amber-300/15 bg-[#0c2135]/90 px-3.5 py-3 shadow-xl backdrop-blur-xl sm:bottom-7 sm:left-1 sm:px-4">
+                <p className="text-[10px] text-slate-400 sm:text-xs">
+                  Ù‡Ø¯ÙÙƒ Ø§Ù„Ù‚Ø§Ø¯Ù…
+                </p>
+                <p className="mt-1 text-sm font-black text-amber-200 sm:text-base">
+                  ðŸ† Ø§Ù„ØªÙÙˆÙ‚
+                </p>
+              </div>
+
+              <div className="absolute bottom-3 right-6 text-xl text-cyan-300/50 sm:right-10">
+                âœ¦
+              </div>
+              <div className="absolute left-8 top-5 text-sm text-blue-300/60 sm:left-12 sm:top-8">
+                âœ§
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 border-t border-white/[0.08] bg-black/10">
+            {[
+              { icon: "âš”ï¸", title: "Ø§Ù„Ù…Ù†Ø§ÙØ³Ø©", subtitle: "ØªØ­Ø¯Ù‘Ù‰ Ù‚Ø¯Ø±Ø§ØªÙƒ" },
+              { icon: "ðŸŽ¯", title: "Ø§Ù„ØªØ±ÙƒÙŠØ²", subtitle: "ØªØ¹Ù„Ù‘Ù… Ø¨Ø§Ø³ØªÙ…Ø±Ø§Ø±" },
+              { icon: "ðŸš€", title: "Ø§Ù„ØªØ·ÙˆØ±", subtitle: "Ø®Ø·ÙˆØ© Ù†Ø­Ùˆ Ø§Ù„Ù†Ø¬Ø§Ø­" },
+            ].map((item, index) => (
+              <div
+                key={item.title}
+                className={`flex items-center justify-center gap-2.5 px-2 py-4 sm:gap-3 sm:py-5 ${
+                  index !== 2 ? "border-l border-white/[0.07]" : ""
+                }`}
+              >
+                <span className="text-lg sm:text-2xl">{item.icon}</span>
+                <div>
+                  <p className="text-[11px] font-black text-white sm:text-sm">
+                    {item.title}
+                  </p>
+                  <p className="mt-1 hidden text-[10px] text-slate-500 sm:block sm:text-xs">
+                    {item.subtitle}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <ArenaChallenges />
+
+        <section>
+          <div className="mb-5 flex items-end justify-between gap-3 sm:mb-6">
+            <div>
+              <p className="mb-2 text-[10px] font-black tracking-[0.2em] text-cyan-300 sm:text-xs">
+                YOUR JOURNEY
+              </p>
+              <h2 className="text-xl font-black text-white sm:text-2xl">
+                Ø±Ø­Ù„ØªÙƒ Ù†Ø­Ùˆ Ø§Ù„Ù‚Ù…Ù‘Ø©
+              </h2>
+              <p className="mt-2 text-xs leading-6 text-slate-400 sm:text-sm">
+                Ø«Ù„Ø§Ø« Ø®Ø·ÙˆØ§Øª ØªØ®Ù„ÙŠÙƒ ØªØªÙ‚Ø¯Ù‘Ù… ÙƒÙ„ ÙŠÙˆÙ….
+              </p>
+            </div>
+            <span className="hidden rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-400 sm:block">
+              MARIS ACADEMY Â²â°Â²â·
+            </span>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {FEATURES.map((feature) => (
+              <article
+                key={feature.title}
+                className={`group relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-br from-white/[0.045] to-white/[0.015] p-5 shadow-lg shadow-black/5 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/20 hover:shadow-xl ${feature.glow} sm:p-6`}
+              >
+                <span className="absolute left-4 top-4 text-xs font-black tracking-widest text-white/15">
+                  {feature.number}
+                </span>
+                <div
+                  className={`mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border text-2xl transition duration-300 group-hover:scale-105 ${feature.iconBg}`}
+                >
+                  {feature.icon}
+                </div>
+                <h3 className={`text-lg font-black text-white ${feature.accent}`}>
+                  {feature.title}
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-slate-400">
+                  {feature.description}
+                </p>
+                <div className="mt-5 h-px w-full bg-gradient-to-l from-white/10 via-white/[0.04] to-transparent" />
+                <span className="mt-4 block text-[10px] font-bold tracking-[0.15em] text-slate-500">
+                  MARIS ARENA PRO
+                </span>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="relative overflow-hidden rounded-3xl border border-cyan-300/15 bg-gradient-to-l from-[#0b263c] via-[#0a1c30] to-[#091727] p-5 sm:p-8">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -left-12 -top-16 h-48 w-48 rounded-full bg-cyan-400/[0.08] blur-3xl"
+          />
+          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-xl">
+              <div className="mb-3 inline-flex items-center gap-2 text-xs font-bold text-cyan-300">
+                <span>ðŸŒŠ</span>
+                <span>Ø§Ø³ØªØ¹Ø¯ Ù‚Ø¨Ù„ Ø§Ù„Ù…Ù†Ø§ÙØ³Ø©</span>
+              </div>
+              <h2 className="text-xl font-black text-white sm:text-2xl">
+                ÙƒÙ„ Ø¨Ø·Ù„ ÙŠØ¨Ø¯Ø£ Ø¨Ø§Ù„ØªØ­Ø¶ÙŠØ±
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-slate-400">
+                Ø±Ø§Ø¬Ø¹ Ø¯Ø±ÙˆØ³ÙƒØŒ Ø¬Ø±Ù‘Ø¨ Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø±Ø§ØªØŒ ÙˆØ·ÙˆÙ‘Ø± Ù…Ø¹Ù„ÙˆÙ…Ø§ØªÙƒ. ÙƒÙ„ Ø¯Ù‚ÙŠÙ‚Ø©
+                ØªØ³ØªØ«Ù…Ø±Ù‡Ø§ Ø§Ù„ÙŠÙˆÙ… ØªÙ‚Ø¯Ø± ØªØµÙ†Ø¹ Ø§Ù„ÙØ±Ù‚ ÙÙŠ Ù†ØªÙŠØ¬ØªÙƒ ØºØ¯ÙˆØ©.
+              </p>
+            </div>
+            <div className="hidden shrink-0 text-5xl opacity-80 sm:block">
+              ðŸ§­
+            </div>
+          </div>
+
+          <div className="relative mt-6 grid gap-3 sm:grid-cols-3">
+            {RESOURCES.map((resource) => (
+              <Link
+                key={resource.href}
+                href={resource.href}
+                className={`group flex min-h-28 items-center gap-3 rounded-2xl border border-white/[0.08] bg-black/15 p-4 transition duration-300 hover:-translate-y-0.5 hover:bg-white/[0.04] ${resource.accent}`}
+              >
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-2xl transition group-hover:scale-105">
+                  {resource.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-black text-white">
+                    {resource.title}
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {resource.description}
+                  </p>
+                  <p className="mt-2 text-xs font-bold text-cyan-300">
+                    {resource.action}{" "}
+                    <span className="inline-block transition-transform group-hover:-translate-x-1">
+                      â†
+                    </span>
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <footer className="pb-2 text-center">
+          <p className="text-[10px] font-bold tracking-[0.2em] text-slate-600 sm:text-xs">
+            BUILT FOR THE NEXT GENERATION
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            MARIS ACADEMY <span className="text-cyan-300">Â²â°Â²â·</span> Â·
+            Ø§Ù„Ù…Ø¹Ø±ÙØ© ØªØµÙ†Ø¹ Ø§Ù„ÙØ±Ù‚
+          </p>
+        </footer>
+      </div>
+    </main>
+  );
+}

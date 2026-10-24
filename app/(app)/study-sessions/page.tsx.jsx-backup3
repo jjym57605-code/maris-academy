@@ -1,0 +1,1915 @@
+﻿
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { getSupabase } from "@/lib/supabase";
+import { getSession, getProfile } from "@/services/auth";
+
+type Subject = {
+  id: string;
+  name: string;
+  stream: string | null;
+};
+
+type StudySession = {
+  id: string;
+  user_id: string;
+  subject_id: string | null;
+  session_type: "free" | "pomodoro";
+  status: "active" | "paused" | "completed" | "cancelled";
+  started_at: string;
+  study_seconds: number;
+  break_seconds: number;
+  pomodoro_work_seconds: number;
+  pomodoro_break_seconds: number;
+  completed_pomodoros: number;
+  notes: string | null;
+  room_id?: string | null;
+};
+
+type StudyRoom = {
+  id: string;
+  host_user_id: string;
+  subject_id: string | null;
+  session_type: "free" | "pomodoro";
+  status: "active" | "closed";
+  invite_code: string;
+  pomodoro_work_seconds: number;
+  pomodoro_break_seconds: number;
+  created_at: string;
+};
+
+type LeaderboardEntry = {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  stream: string | null;
+  total_study_seconds: number;
+  completed_sessions: number;
+  completed_pomodoros: number;
+};
+
+type Theme = {
+  id: string;
+  name: string;
+  description: string;
+  background: string;
+  accent: string;
+};
+
+const THEMES: Theme[] = [
+  {
+    id: "ocean",
+    name: "Ø£Ø¹Ù…Ø§Ù‚ Ø§Ù„Ù…Ø­ÙŠØ·",
+    description: "Ù‡Ø¯ÙˆØ¡ Ø§Ù„Ø£Ø¹Ù…Ø§Ù‚",
+    background:
+      "radial-gradient(ellipse at 50% 0%, #164e63 0%, #071b35 48%, #020617 100%)",
+    accent: "#67e8f9",
+  },
+  {
+    id: "midnight",
+    name: "Ù…Ù†ØªØµÙ Ø§Ù„Ù„ÙŠÙ„",
+    description: "ØªØ±ÙƒÙŠØ² Ø¨Ù„Ø§ Ø­Ø¯ÙˆØ¯",
+    background:
+      "radial-gradient(ellipse at 50% 0%, #312e81 0%, #111127 48%, #050510 100%)",
+    accent: "#c4b5fd",
+  },
+  {
+    id: "forest",
+    name: "Ø§Ù„ØºØ§Ø¨Ø©",
+    description: "Ø±Ø§Ø­Ø© Ø§Ù„Ø·Ø¨ÙŠØ¹Ø©",
+    background:
+      "radial-gradient(ellipse at 50% 0%, #14532d 0%, #10291f 48%, #04130d 100%)",
+    accent: "#86efac",
+  },
+  {
+    id: "sunset",
+    name: "Ø§Ù„ØºØ±ÙˆØ¨",
+    description: "Ø¯ÙØ¡ ÙˆÙ‡Ø¯ÙˆØ¡",
+    background:
+      "radial-gradient(ellipse at 50% 0%, #7c2d12 0%, #431b32 48%, #160c20 100%)",
+    accent: "#fdba74",
+  },
+  {
+    id: "black",
+    name: "Ø§Ù„ØªØ±ÙƒÙŠØ² Ø§Ù„Ø¯Ø§ÙƒÙ†",
+    description: "Ø¨Ø³Ø§Ø·Ø© ÙƒØ§Ù…Ù„Ø©",
+    background:
+      "radial-gradient(ellipse at 50% 0%, #27272a 0%, #18181b 48%, #09090b 100%)",
+    accent: "#e4e4e7",
+  },
+];
+
+const SOUNDS = [
+  { id: "off", label: "Ø¨Ø¯ÙˆÙ† ØµÙˆØª", icon: "ðŸ”‡" },
+  { id: "rain", label: "Ø§Ù„Ù…Ø·Ø± ÙˆØ§Ù„Ø¹Ø§ØµÙØ©", icon: "ðŸŒ§ï¸" },
+  { id: "birds", label: "Ø²Ù‚Ø²Ù‚Ø© Ø§Ù„Ø·ÙŠÙˆØ±", icon: "ðŸ¦" },
+  { id: "ocean", label: "Ø£Ù…ÙˆØ§Ø¬ Ø§Ù„Ø¨Ø­Ø±", icon: "ðŸŒŠ" },
+] as const;
+
+type SoundId = (typeof SOUNDS)[number]["id"];
+
+const SOUND_SOURCES: Partial<Record<SoundId, string>> = {
+  rain: "/sounds/rain.wav",
+  birds: "/sounds/birds.wav",
+  ocean: "/sounds/ocean.wav",
+};
+
+function formatTime(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+
+  return [hours, minutes, secs]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
+function formatHours(seconds: number) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+
+  if (hours === 0) return `${minutes} Ø¯`;
+  return `${hours} Ø³ ${minutes} Ø¯`;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error
+  ) {
+    return String(error.message);
+  }
+
+  return "Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…ØªÙˆÙ‚Ø¹. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.";
+}
+
+function normalizeInviteCode(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export default function StudySessionsPage() {
+  const searchParams = useSearchParams();
+  const inviteFromUrl = searchParams.get("invite") ?? "";
+
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState("");
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjectId, setSubjectId] = useState("");
+  const [sessionType, setSessionType] = useState<"free" | "pomodoro">(
+    "pomodoro"
+  );
+
+  const [studySeconds, setStudySeconds] = useState(0);
+  const [breakSeconds, setBreakSeconds] = useState(0);
+  const [phaseSeconds, setPhaseSeconds] = useState(0);
+  const [phase, setPhase] = useState<"work" | "break">("work");
+  const [workMinutes, setWorkMinutes] = useState(25);
+  const [breakMinutes, setBreakMinutes] = useState(5);
+  const [completedPomodoros, setCompletedPomodoros] = useState(0);
+
+  const [running, setRunning] = useState(false);
+  const [session, setSession] = useState<StudySession | null>(null);
+
+  const [themeId, setThemeId] = useState("ocean");
+  const [sound, setSound] = useState<SoundId>("off");
+  const [volume, setVolume] = useState(20);
+  const [notes, setNotes] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<StudySession[]>([]);
+  const [todaySeconds, setTodaySeconds] = useState(0);
+  const [totalSeconds, setTotalSeconds] = useState(0);
+
+  const [room, setRoom] = useState<StudyRoom | null>(null);
+  const [inviteCodeInput, setInviteCodeInput] = useState("");
+  const [roomBusy, setRoomBusy] = useState(false);
+  const [showRooms, setShowRooms] = useState(false);
+
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const saveBusyRef = useRef(false);
+  const inviteHandledRef = useRef(false);
+
+  const latestRef = useRef({
+    studySeconds: 0,
+    breakSeconds: 0,
+    completedPomodoros: 0,
+    notes: "",
+    phase: "work" as "work" | "break",
+    sessionType: "pomodoro" as "free" | "pomodoro",
+    running: false,
+    sessionId: "",
+    phaseSeconds: 0,
+  });
+
+  const theme = THEMES.find((item) => item.id === themeId) ?? THEMES[0];
+
+  useEffect(() => {
+    latestRef.current = {
+      studySeconds,
+      breakSeconds,
+      completedPomodoros,
+      notes,
+      phase,
+      sessionType,
+      running,
+      sessionId: session?.id ?? "",
+      phaseSeconds,
+    };
+  }, [
+    studySeconds,
+    breakSeconds,
+    completedPomodoros,
+    notes,
+    phase,
+    sessionType,
+    running,
+    session,
+    phaseSeconds,
+  ]);
+
+  const loadLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+
+    try {
+      const supabase = getSupabase();
+      if (!supabase) return;
+
+      const { data, error } = await supabase.rpc(
+        "get_study_leaderboard",
+        { p_limit: 50 }
+      );
+
+      if (error) throw error;
+
+      setLeaderboard((data ?? []) as LeaderboardEntry[]);
+    } catch (error) {
+      setErrorMessage(
+        `ØªØ¹Ø°Ù‘Ø± ØªØ­Ù…ÙŠÙ„ ØªØ±ØªÙŠØ¨ Ø§Ù„Ø·Ù„Ø¨Ø©: ${getErrorMessage(error)}`
+      );
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        throw new Error(
+          "ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª. Ø£Ø¹Ø¯ ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØµÙØ­Ø©."
+        );
+      }
+
+      const authSession = await getSession(supabase);
+
+      if (!authSession?.user) {
+        setErrorMessage(
+          "Ù„Ø§Ø²Ù… ØªØ³Ø¬Ù‘Ù„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¨Ø§Ø´ ØªØ³ØªØ¹Ù…Ù„ Ø§Ù„Ø¬Ù„Ø³Ø§Øª Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©."
+        );
+        return;
+      }
+
+      const id = authSession.user.id;
+      setUserId(id);
+
+      const profile = await getProfile(supabase, id);
+
+      let subjectsQuery = supabase
+        .from("subjects")
+        .select("id, name, stream")
+        .order("name");
+
+      if (profile?.stream) {
+        subjectsQuery = subjectsQuery.or(
+          `stream.is.null,stream.eq.${profile.stream}`
+        );
+      }
+
+      const { data: subjectsData, error: subjectsError } =
+        await subjectsQuery;
+
+      if (subjectsError) throw subjectsError;
+      setSubjects((subjectsData ?? []) as Subject[]);
+
+      const { data: activeData, error: activeError } = await supabase
+        .from("study_sessions")
+        .select("*")
+        .eq("user_id", id)
+        .in("status", ["active", "paused"])
+        .order("started_at", { ascending: false })
+        .limit(1);
+
+      if (activeError) throw activeError;
+
+      const active = (activeData?.[0] ?? null) as StudySession | null;
+
+      if (active) {
+        setSession(active);
+        setSubjectId(active.subject_id ?? "");
+        setSessionType(active.session_type);
+        setStudySeconds(active.study_seconds);
+        setBreakSeconds(active.break_seconds);
+        setCompletedPomodoros(active.completed_pomodoros);
+        setWorkMinutes(
+          Math.max(1, Math.round(active.pomodoro_work_seconds / 60))
+        );
+        setBreakMinutes(
+          Math.max(1, Math.round(active.pomodoro_break_seconds / 60))
+        );
+        setNotes(active.notes ?? "");
+        setRunning(false);
+        setPhaseSeconds(0);
+        setPhase("work");
+
+        if (active.room_id) {
+          const { data: roomData } = await supabase
+            .from("study_rooms")
+            .select("*")
+            .eq("id", active.room_id)
+            .maybeSingle();
+
+          if (roomData) {
+            setRoom(roomData as StudyRoom);
+          }
+        } else {
+          setRoom(null);
+        }
+
+        setMessage("Ø§Ø³ØªØ±Ø¬Ø¹Ù†Ø§ Ø¢Ø®Ø± Ø¬Ù„Ø³Ø© Ù…Ø­ÙÙˆØ¸Ø©. ØªÙ‚Ø¯Ø± ØªÙƒÙ…Ù„Ù‡Ø§.");
+      } else {
+        setSession(null);
+        setRoom(null);
+      }
+
+      const { data: historyData, error: historyError } = await supabase
+        .from("study_sessions")
+        .select("*")
+        .eq("user_id", id)
+        .eq("status", "completed")
+        .order("started_at", { ascending: false })
+        .limit(20);
+
+      if (historyError) throw historyError;
+
+      const completedHistory = (historyData ?? []) as StudySession[];
+      setHistory(completedHistory);
+
+      setTotalSeconds(
+        completedHistory.reduce(
+          (sum, item) => sum + (item.study_seconds ?? 0),
+          0
+        )
+      );
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const { data: todayData, error: todayError } = await supabase
+        .from("study_sessions")
+        .select("study_seconds")
+        .eq("user_id", id)
+        .gte("started_at", startOfDay.toISOString())
+        .in("status", ["active", "paused", "completed"]);
+
+      if (todayError) throw todayError;
+
+      setTodaySeconds(
+        (todayData ?? []).reduce(
+          (sum, item) => sum + (item.study_seconds ?? 0),
+          0
+        )
+      );
+
+      await loadLeaderboard();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [loadLeaderboard]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      !userId ||
+      !inviteFromUrl ||
+      inviteHandledRef.current
+    ) {
+      return;
+    }
+
+    inviteHandledRef.current = true;
+    setInviteCodeInput(normalizeInviteCode(inviteFromUrl));
+    setShowRooms(true);
+    setMessage("ÙˆØµÙ„Øª Ø¹Ø¨Ø± Ø±Ø§Ø¨Ø· Ø¯Ø¹ÙˆØ©. Ø§Ø¶ØºØ· Â«Ø§Ù†Ø¶Ù… Ù„Ù„ØºØ±ÙØ©Â» Ù„Ù„Ù…ØªØ§Ø¨Ø¹Ø©.");
+  }, [loading, userId, inviteFromUrl]);
+
+  // Ø§Ù„Ø£ØµÙˆØ§Øª Ø§Ù„Ø·Ø¨ÙŠØ¹ÙŠØ© Ø£Ø«Ù†Ø§Ø¡ ØªØ´ØºÙŠÙ„ Ø¬Ù„Ø³Ø© Ø§Ù„Ø¯Ø±Ø§Ø³Ø© ÙÙ‚Ø·.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (sound === "off") {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.removeAttribute("src");
+      audio.load();
+      return;
+    }
+
+    const source = SOUND_SOURCES[sound];
+
+    if (!source) {
+      audio.pause();
+      setErrorMessage("Ù…Ø³Ø§Ø± Ø§Ù„Ù…Ù„Ù Ø§Ù„ØµÙˆØªÙŠ ØºÙŠØ± Ù…Ø­Ø¯Ø¯.");
+      return;
+    }
+
+    audio.pause();
+    audio.src = source;
+    audio.loop = true;
+    audio.volume = volume / 100;
+    audio.load();
+
+    if (running && volume > 0) {
+      void audio.play().catch(() => {
+        setMessage(
+          "Ù…Ø§ Ù‚Ø¯Ø±Ù†Ø§Ø´ Ù†Ø´ØºÙ„Ùˆ Ø§Ù„ØµÙˆØª. ØªØ£ÙƒØ¯ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ø§Ù„Ù…Ù„Ù Ø¯Ø§Ø®Ù„ public/sounds."
+        );
+      });
+    }
+
+    return () => {
+      audio.pause();
+    };
+  }, [sound, running]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.volume = volume / 100;
+
+    if (volume === 0 || !running || sound === "off") {
+      audio.pause();
+    } else if (audio.src) {
+      void audio.play().catch(() => undefined);
+    }
+  }, [volume, running, sound]);
+
+  useEffect(() => {
+    return () => {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+    };
+  }, []);
+
+  const saveSession = useCallback(
+    async (status?: StudySession["status"]) => {
+      const current = latestRef.current;
+
+      if (!current.sessionId || saveBusyRef.current) return;
+
+      saveBusyRef.current = true;
+      setSaving(true);
+
+      try {
+        const supabase = getSupabase();
+
+        if (!supabase) {
+          throw new Error("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+        }
+
+        const { error } = await supabase
+          .from("study_sessions")
+          .update({
+            subject_id: subjectId || null,
+            session_type: current.sessionType,
+            status: status ?? (current.running ? "active" : "paused"),
+            study_seconds: current.studySeconds,
+            break_seconds: current.breakSeconds,
+            pomodoro_work_seconds: workMinutes * 60,
+            pomodoro_break_seconds: breakMinutes * 60,
+            completed_pomodoros: current.completedPomodoros,
+            notes: current.notes || null,
+            ended_at:
+              status === "completed" || status === "cancelled"
+                ? new Date().toISOString()
+                : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", current.sessionId)
+          .eq("user_id", userId);
+
+        if (error) throw error;
+      } catch (error) {
+        setErrorMessage(
+          `ØªØ¹Ø°Ù‘Ø± Ø­ÙØ¸ Ø§Ù„Ø¬Ù„Ø³Ø©: ${getErrorMessage(error)}`
+        );
+      } finally {
+        saveBusyRef.current = false;
+        setSaving(false);
+      }
+    },
+    [subjectId, workMinutes, breakMinutes, userId]
+  );
+
+  useEffect(() => {
+    if (!running) return;
+
+    const interval = window.setInterval(() => {
+      setPhaseSeconds((current) => {
+        const next = current + 1;
+
+        if (
+          latestRef.current.sessionType === "pomodoro" &&
+          latestRef.current.phase === "work" &&
+          next >= workMinutes * 60
+        ) {
+          setCompletedPomodoros((value) => value + 1);
+          setPhase("break");
+          setMessage("Ø¨Ø±Ø§ÙÙˆ! ÙƒÙ…Ù„Øª ÙØªØ±Ø© ØªØ±ÙƒÙŠØ². Ø®Ø° Ø§Ø³ØªØ±Ø§Ø­Ø© Ù‚ØµÙŠØ±Ø©.");
+          return 0;
+        }
+
+        if (
+          latestRef.current.sessionType === "pomodoro" &&
+          latestRef.current.phase === "break" &&
+          next >= breakMinutes * 60
+        ) {
+          setPhase("work");
+          setMessage("Ø§Ù„Ø§Ø³ØªØ±Ø§Ø­Ø© ÙƒÙ…Ù„Øª. Ø§Ø±Ø¬Ø¹ Ø±ÙƒÙ‘Ø²!");
+          return 0;
+        }
+
+        return next;
+      });
+
+      if (
+        latestRef.current.phase === "break" &&
+        latestRef.current.sessionType === "pomodoro"
+      ) {
+        setBreakSeconds((value) => value + 1);
+      } else {
+        setStudySeconds((value) => value + 1);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [running, workMinutes, breakMinutes]);
+
+  useEffect(() => {
+    if (!session || !running) return;
+
+    const interval = window.setInterval(() => {
+      void saveSession("active");
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [session, running, saveSession]);
+
+  useEffect(() => {
+    const handleUnload = () => {
+      const current = latestRef.current;
+      if (!current.sessionId) return;
+
+      const supabase = getSupabase();
+      if (!supabase) return;
+
+      void supabase
+        .from("study_sessions")
+        .update({
+          study_seconds: current.studySeconds,
+          break_seconds: current.breakSeconds,
+          completed_pomodoros: current.completedPomodoros,
+          notes: current.notes || null,
+          status: current.running ? "active" : "paused",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", current.sessionId)
+        .eq("user_id", userId);
+    };
+
+    window.addEventListener("pagehide", handleUnload);
+    return () => window.removeEventListener("pagehide", handleUnload);
+  }, [userId]);
+
+  const beginSession = async () => {
+    setErrorMessage("");
+    setMessage("");
+
+    try {
+      const supabase = getSupabase();
+
+      if (!supabase) {
+        throw new Error("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+      }
+
+      const authSession = await getSession(supabase);
+
+      if (!authSession?.user) {
+        setErrorMessage("Ø³Ø¬Ù‘Ù„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø£ÙˆÙ„Ø§Ù‹.");
+        return;
+      }
+
+      if (session) {
+        const { error } = await supabase
+          .from("study_sessions")
+          .update({
+            status: "active",
+            subject_id: subjectId || null,
+            session_type: sessionType,
+            notes: notes || null,
+            pomodoro_work_seconds: workMinutes * 60,
+            pomodoro_break_seconds: breakMinutes * 60,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", session.id)
+          .eq("user_id", authSession.user.id);
+
+        if (error) throw error;
+
+        setSession({ ...session, status: "active" });
+      } else {
+        const { data, error } = await supabase
+          .from("study_sessions")
+          .insert({
+            user_id: authSession.user.id,
+            subject_id: subjectId || null,
+            session_type: sessionType,
+            status: "active",
+            study_seconds: 0,
+            break_seconds: 0,
+            pomodoro_work_seconds: workMinutes * 60,
+            pomodoro_break_seconds: breakMinutes * 60,
+            completed_pomodoros: 0,
+            notes: notes || null,
+            room_id: room?.id ?? null,
+          })
+          .select("*")
+          .single();
+
+        if (error) throw error;
+
+        setSession(data as StudySession);
+        setStudySeconds(0);
+        setBreakSeconds(0);
+        setPhaseSeconds(0);
+        setCompletedPomodoros(0);
+        setPhase("work");
+      }
+
+      setRunning(true);
+      setMessage("Ø¨Ø¯Ø£Øª Ø§Ù„Ø¬Ù„Ø³Ø©. Ø¨Ø§Ù„ØªÙˆÙÙŠÙ‚!");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const pauseSession = async () => {
+    setRunning(false);
+    await saveSession("paused");
+    setMessage("Ø§Ù„Ø¬Ù„Ø³Ø© Ù…ØªÙˆÙ‚ÙØ© Ù…Ø¤Ù‚ØªØ§Ù‹ØŒ ÙˆÙ‚ØªÙƒ Ù…Ø­ÙÙˆØ¸.");
+  };
+
+  const finishSession = async () => {
+    if (!session) return;
+
+    setRunning(false);
+    await saveSession("completed");
+    setSession(null);
+    setPhaseSeconds(0);
+    setMessage("ØªÙ… Ø¥Ù†Ù‡Ø§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø© ÙˆØ­ÙØ¸Ù‡Ø§ Ø¨Ù†Ø¬Ø§Ø­.");
+
+    await loadData();
+  };
+
+  const cancelSession = async () => {
+    if (!session) return;
+
+    const confirmed = window.confirm(
+      "Ù‡Ù„ ØªØ±ÙŠØ¯ Ø¥Ù„ØºØ§Ø¡ Ù‡Ø°Ù‡ Ø§Ù„Ø¬Ù„Ø³Ø©ØŸ Ø³ÙŠØªÙ… Ø­ÙØ¸ ÙˆÙ‚ØªÙ‡Ø§ ÙƒØ¬Ù„Ø³Ø© Ù…Ù„ØºØ§Ø©."
+    );
+
+    if (!confirmed) return;
+
+    setRunning(false);
+    await saveSession("cancelled");
+    setSession(null);
+    setStudySeconds(0);
+    setBreakSeconds(0);
+    setPhaseSeconds(0);
+    setCompletedPomodoros(0);
+    setRoom(null);
+    setMessage("ØªÙ… Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø©.");
+  };
+
+  const resetPhase = () => {
+    setPhaseSeconds(0);
+    setPhase("work");
+    setMessage("ØªÙ…Øª Ø¥Ø¹Ø§Ø¯Ø© Ø¶Ø¨Ø· Ù…Ø¤Ù‚Ù‘Øª Ø§Ù„ÙØªØ±Ø©.");
+  };
+
+  // Ø¥Ù†Ø´Ø§Ø¡ ØºØ±ÙØ© Ø¹Ø¨Ø± Ø¯Ø§Ù„Ø© SupabaseØ› Ø§Ù„Ø¯Ø§Ù„Ø© ØªÙ†Ø´Ø¦ Ø¬Ù„Ø³Ø© Ø´Ø®ØµÙŠØ© Ù„Ù„Ù…Ø¶ÙŠÙ.
+  const createRoom = async () => {
+    setRoomBusy(true);
+    setErrorMessage("");
+    setMessage("");
+
+    try {
+      const supabase = getSupabase();
+      if (!supabase) throw new Error("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+
+      if (session) {
+        throw new Error(
+          "Ø¹Ù†Ø¯Ùƒ Ø¬Ù„Ø³Ø© Ù…ÙØªÙˆØ­Ø© Ø¨Ø§Ù„ÙØ¹Ù„. Ø£Ù†Ù‡ÙÙ‡Ø§ Ø£Ùˆ Ø£ÙˆÙ‚ÙÙ‡Ø§ Ù‚Ø¨Ù„ Ø¥Ù†Ø´Ø§Ø¡ ØºØ±ÙØ©."
+        );
+      }
+
+      const { data, error } = await supabase.rpc("create_study_room", {
+        p_subject_id: subjectId || null,
+        p_session_type: sessionType,
+        p_pomodoro_work_seconds: workMinutes * 60,
+        p_pomodoro_break_seconds: breakMinutes * 60,
+      });
+
+      if (error) throw error;
+
+      const result = Array.isArray(data) ? data[0] : data;
+
+      if (!result?.room_id || !result?.study_session_id) {
+        throw new Error("Ø§Ù„ØºØ±ÙØ© ØªØ®Ù„Ù‚Øª Ù„ÙƒÙ† Ù…Ø§ Ù‚Ø¯Ø±Ù†Ø§Ø´ Ù†Ø¬ÙŠØ¨Ùˆ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø¬Ù„Ø³Ø©.");
+      }
+
+      const [{ data: roomData, error: roomError }, { data: sessionData, error: sessionError }] =
+        await Promise.all([
+          supabase
+            .from("study_rooms")
+            .select("*")
+            .eq("id", result.room_id)
+            .single(),
+          supabase
+            .from("study_sessions")
+            .select("*")
+            .eq("id", result.study_session_id)
+            .eq("user_id", userId)
+            .single(),
+        ]);
+
+      if (roomError) throw roomError;
+      if (sessionError) throw sessionError;
+
+      setRoom(roomData as StudyRoom);
+      setSession(sessionData as StudySession);
+      setSessionType(sessionData.session_type);
+      setStudySeconds(sessionData.study_seconds);
+      setBreakSeconds(sessionData.break_seconds);
+      setCompletedPomodoros(sessionData.completed_pomodoros);
+      setRunning(false);
+      setShowRooms(true);
+      setMessage("Ø§Ù„ØºØ±ÙØ© ØªØ®Ù„Ù‚Øª Ø¨Ù†Ø¬Ø§Ø­! Ø´Ø§Ø±Ùƒ Ø§Ù„Ø±Ø§Ø¨Ø· Ù…Ø¹ Ø²Ù…Ù„Ø§Ø¦Ùƒ.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setRoomBusy(false);
+    }
+  };
+
+  // ÙƒÙ„ Ø§Ù†Ø¶Ù…Ø§Ù… ÙŠÙ†Ø´Ø¦ ØµÙ study_sessions Ù…Ø³ØªÙ‚Ù„Ù‹Ø§ Ù„Ù„Ø·Ø§Ù„Ø¨.
+  const joinRoom = async () => {
+    const code = normalizeInviteCode(inviteCodeInput);
+
+    if (!code) {
+      setErrorMessage("Ø§ÙƒØªØ¨ ÙƒÙˆØ¯ Ø§Ù„Ø¯Ø¹ÙˆØ© Ø£ÙˆÙ„Ø§Ù‹.");
+      return;
+    }
+
+    setRoomBusy(true);
+    setErrorMessage("");
+    setMessage("");
+
+    try {
+      const supabase = getSupabase();
+      if (!supabase) throw new Error("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+
+      if (session) {
+        throw new Error(
+          "Ø¹Ù†Ø¯Ùƒ Ø¬Ù„Ø³Ø© Ù…ÙØªÙˆØ­Ø© Ø¨Ø§Ù„ÙØ¹Ù„. Ø£Ù†Ù‡ÙÙ‡Ø§ Ø£Ùˆ Ø£ÙˆÙ‚ÙÙ‡Ø§ Ù‚Ø¨Ù„ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…."
+        );
+      }
+
+      const { data, error } = await supabase.rpc("join_study_room", {
+        p_invite_code: code,
+      });
+
+      if (error) throw error;
+
+      const result = Array.isArray(data) ? data[0] : data;
+
+      if (!result?.room_id || !result?.study_session_id) {
+        throw new Error("Ù…Ø§ Ù‚Ø¯Ø±Ù†Ø§Ø´ Ù†Ø¬ÙŠØ¨Ùˆ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ØºØ±ÙØ© Ø¨Ø¹Ø¯ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù….");
+      }
+
+      const [{ data: roomData, error: roomError }, { data: sessionData, error: sessionError }] =
+        await Promise.all([
+          supabase
+            .from("study_rooms")
+            .select("*")
+            .eq("id", result.room_id)
+            .single(),
+          supabase
+            .from("study_sessions")
+            .select("*")
+            .eq("id", result.study_session_id)
+            .eq("user_id", userId)
+            .single(),
+        ]);
+
+      if (roomError) throw roomError;
+      if (sessionError) throw sessionError;
+
+      const joinedSession = sessionData as StudySession;
+
+      setRoom(roomData as StudyRoom);
+      setSession(joinedSession);
+      setSubjectId(joinedSession.subject_id ?? "");
+      setSessionType(joinedSession.session_type);
+      setStudySeconds(joinedSession.study_seconds);
+      setBreakSeconds(joinedSession.break_seconds);
+      setCompletedPomodoros(joinedSession.completed_pomodoros);
+      setWorkMinutes(
+        Math.max(1, Math.round(joinedSession.pomodoro_work_seconds / 60))
+      );
+      setBreakMinutes(
+        Math.max(1, Math.round(joinedSession.pomodoro_break_seconds / 60))
+      );
+      setNotes(joinedSession.notes ?? "");
+      setPhaseSeconds(0);
+      setPhase("work");
+      setRunning(false);
+      setMessage(
+        "Ø§Ù†Ø¶Ù…Ù‘ÙŠØª Ù„Ù„ØºØ±ÙØ© Ø¨Ù†Ø¬Ø§Ø­. Ø§Ø¶ØºØ· Â«Ø§Ø³ØªØ¦Ù†Ø§Ù Ø§Ù„Ø¬Ù„Ø³Ø©Â» Ø¨Ø§Ø´ ÙŠØ¨Ø¯Ø£ ÙˆÙ‚ØªÙƒ Ø§Ù„Ø´Ø®ØµÙŠ."
+      );
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setRoomBusy(false);
+    }
+  };
+
+  const shareRoom = async () => {
+    if (!room) return;
+
+    const link = `${window.location.origin}/study-sessions?invite=${encodeURIComponent(room.invite_code)}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "MARIS STUDY ROOM",
+          text: `Ø§Ù†Ø¶Ù…Ù‘ Ù„Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø¬Ù…Ø§Ø¹ÙŠØ© ÙÙŠ MARIS ACADEMY. ÙƒÙˆØ¯ Ø§Ù„Ø¯Ø¹ÙˆØ©: ${room.invite_code}`,
+          url: link,
+        });
+      } else {
+        await navigator.clipboard.writeText(link);
+        setMessage("Ù†Ø³Ø®Ù†Ø§ Ø±Ø§Ø¨Ø· Ø§Ù„ØºØ±ÙØ©. Ø§Ø¨Ø¹Ø«Ù‡ Ù„Ø²Ù…Ù„Ø§Ø¦Ùƒ!");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+
+      try {
+        await navigator.clipboard.writeText(link);
+        setMessage("Ù†Ø³Ø®Ù†Ø§ Ø±Ø§Ø¨Ø· Ø§Ù„ØºØ±ÙØ©. Ø§Ø¨Ø¹Ø«Ù‡ Ù„Ø²Ù…Ù„Ø§Ø¦Ùƒ!");
+      } catch {
+        setErrorMessage(
+          "Ù…Ø§ Ù‚Ø¯Ø±Ù†Ø§Ø´ Ù†Ù†Ø³Ø®Ùˆ Ø§Ù„Ø±Ø§Ø¨Ø· ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§. Ø§Ø³ØªØ¹Ù…Ù„ ÙƒÙˆØ¯ Ø§Ù„Ø¯Ø¹ÙˆØ© Ø§Ù„Ø¸Ø§Ù‡Ø± ÙÙŠ Ø§Ù„ØºØ±ÙØ©."
+        );
+      }
+    }
+  };
+
+  const closeRoom = async () => {
+    if (!room) return;
+
+    const confirmed = window.confirm(
+      "Ù‡Ù„ ØªØ±ÙŠØ¯ Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„ØºØ±ÙØ©ØŸ Ù„Ù† ÙŠØªÙ…ÙƒÙ† Ø§Ù„Ø·Ù„Ø¨Ø© Ù…Ù† Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ø¥Ù„ÙŠÙ‡Ø§ Ø¨Ø¹Ø¯ Ø§Ù„Ø¥ØºÙ„Ø§Ù‚."
+    );
+
+    if (!confirmed) return;
+
+    setRoomBusy(true);
+    setErrorMessage("");
+
+    try {
+      const supabase = getSupabase();
+      if (!supabase) throw new Error("ØªØ¹Ø°Ù‘Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
+
+      const { data, error } = await supabase.rpc("close_study_room", {
+        p_room_id: room.id,
+      });
+
+      if (error) throw error;
+      if (data !== true) {
+        throw new Error("Ù…Ø§ Ù‚Ø¯Ø±Ù†Ø§Ø´ Ù†ØºÙ„Ù‚Ùˆ Ø§Ù„ØºØ±ÙØ©. ØªØ£ÙƒØ¯ Ø£Ù†Ùƒ ØµØ§Ø­Ø¨Ù‡Ø§.");
+      }
+
+      setRoom({ ...room, status: "closed" });
+      setMessage("ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„ØºØ±ÙØ©. ØªÙ‚Ø¯Ø± ØªÙƒÙ…Ù„ Ø­ÙØ¸ Ø¬Ù„Ø³ØªÙƒ Ø§Ù„Ø´Ø®ØµÙŠØ©.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setRoomBusy(false);
+    }
+  };
+
+  const phaseTarget =
+    sessionType === "pomodoro"
+      ? (phase === "work" ? workMinutes : breakMinutes) * 60
+      : 0;
+
+  const phaseRemaining = Math.max(0, phaseTarget - phaseSeconds);
+
+  const progress =
+    phaseTarget > 0
+      ? Math.min(100, (phaseSeconds / phaseTarget) * 100)
+      : 0;
+
+  const waterLevel =
+    phaseTarget > 0
+      ? Math.max(0, Math.min(1, phaseRemaining / phaseTarget))
+      : 0;
+
+  const waterY = 278 - waterLevel * 256;
+  const ringCircumference = 2 * Math.PI * 133;
+
+  if (loading) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-[70vh] items-center justify-center bg-[#020617] px-4 text-cyan-100"
+      >
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-cyan-300/20 border-t-cyan-300" />
+          <p className="font-bold">Ù†Ø­Ø¶Ù‘Ø±Ùˆ ÙØ¶Ø§Ø¡ Ø§Ù„Ø¯Ø±Ø§Ø³Ø©...</p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main
+      dir="rtl"
+      className="min-h-screen overflow-x-clip text-white"
+      style={{ background: theme.background }}
+    >
+      <audio ref={audioRef} preload="none" />
+
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -right-32 top-24 h-80 w-80 rounded-full bg-cyan-400/10 blur-[100px]" />
+        <div className="absolute -left-32 bottom-10 h-80 w-80 rounded-full bg-blue-500/10 blur-[100px]" />
+        <div className="absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.7)_1px,transparent_1px)] [background-size:36px_36px]" />
+      </div>
+
+      <div className="relative mx-auto w-full max-w-7xl px-3 py-5 sm:px-6 sm:py-10">
+        <header className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <Link
+              href="/dashboard"
+              className="mb-4 inline-flex min-h-10 items-center gap-2 text-sm font-bold text-cyan-200/70 transition hover:text-cyan-100"
+            >
+              <span>â†’</span>
+              Ø§Ù„Ø±Ø¬ÙˆØ¹ Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©
+            </Link>
+
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-200/20 bg-cyan-300/10 text-2xl shadow-lg shadow-cyan-950/20 sm:h-12 sm:w-12">
+                ðŸ‹
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black tracking-[0.2em] text-cyan-300 sm:text-xs">
+                  MARIS ACADEMY Â²â°Â²â·
+                </p>
+                <h1 className="mt-1 break-words text-xl font-black sm:text-3xl">
+                  MARIS STUDY ROOM
+                </h1>
+              </div>
+            </div>
+
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-white/60">
+              Ù…Ø³Ø§Ø­ØªÙƒ Ø§Ù„Ø®Ø§ØµØ© Ù„Ù„ØªØ±ÙƒÙŠØ²ØŒ ØªÙ†Ø¸ÙŠÙ… Ø§Ù„ÙˆÙ‚ØªØŒ ÙˆÙ…Ø±Ø§Ø¬Ø¹Ø© Ø¬Ù…Ø§Ø¹ÙŠØ© Ù…Ø¹ Ø²Ù…Ù„Ø§Ø¦Ùƒ.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowSettings((value) => !value)}
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold transition hover:border-cyan-300/40 hover:bg-cyan-300/10 sm:w-auto sm:px-5"
+          >
+            âš™ï¸ {showSettings ? "Ø¥Ø®ÙØ§Ø¡ Ø§Ù„ØªØ®ØµÙŠØµ" : "ØªØ®ØµÙŠØµ Ø£Ø¬ÙˆØ§Ø¡ Ø§Ù„Ø¯Ø±Ø§Ø³Ø©"}
+          </button>
+        </header>
+
+        {errorMessage && (
+          <div
+            role="alert"
+            className="mb-5 break-words rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-sm leading-7 text-rose-100"
+          >
+            {errorMessage}
+          </div>
+        )}
+
+        {message && (
+          <div
+            aria-live="polite"
+            className="mb-5 break-words rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.07] p-4 text-sm leading-7 text-cyan-100"
+          >
+            {message}
+          </div>
+        )}
+
+        <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="col-span-2 rounded-3xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl sm:col-span-1 sm:p-5">
+            <p className="text-sm text-white/50">Ø¯Ø±Ø§Ø³Ø© Ø§Ù„ÙŠÙˆÙ…</p>
+            <p className="mt-3 text-2xl font-black" style={{ color: theme.accent }}>
+              {formatHours(todaySeconds + studySeconds)}
+            </p>
+            <p className="mt-2 text-xs text-white/35">Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ù…Ø³Ø¬Ù‘Ù„ ÙÙŠ Ø­Ø³Ø§Ø¨Ùƒ</p>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl sm:p-5">
+            <p className="text-sm text-white/50">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¯Ø±Ø§Ø³Ø©</p>
+            <p className="mt-3 text-2xl font-black">
+              {formatHours(totalSeconds + studySeconds)}
+            </p>
+            <p className="mt-2 text-xs text-white/35">Ù…Ø¬Ù…ÙˆØ¹ Ø§Ù„Ø¬Ù„Ø³Ø§Øª Ø§Ù„Ù…Ø­Ù…Ù‘Ù„Ø©</p>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl sm:p-5">
+            <p className="text-sm text-white/50">ÙØªØ±Ø§Øª Pomodoro</p>
+            <p className="mt-3 text-2xl font-black" style={{ color: theme.accent }}>
+              {completedPomodoros}
+            </p>
+            <p className="mt-2 text-xs text-white/35">Ø§Ù„ÙØªØ±Ø§Øª Ø§Ù„Ù…ÙƒØªÙ…Ù„Ø© ÙÙŠ Ø¬Ù„Ø³ØªÙƒ</p>
+          </div>
+        </section>
+
+        {/* Ø§Ù„ØºØ±Ù Ø§Ù„Ø¬Ù…Ø§Ø¹ÙŠØ© */}
+        <section className="mb-6 rounded-3xl border border-cyan-300/15 bg-[#020617]/65 p-4 backdrop-blur-xl sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black tracking-widest text-cyan-300">
+                MARIS GROUP STUDY
+              </p>
+              <h2 className="mt-2 text-xl font-black">Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ù…Ø¹ Ø§Ù„Ø£ØµØ¯Ù‚Ø§Ø¡</h2>
+              <p className="mt-2 text-sm leading-6 text-white/50">
+                ÙƒÙ„ Ø·Ø§Ù„Ø¨ Ø¹Ù†Ø¯Ù‡ Ù…Ø¤Ù‚Ù‘Øª ÙˆØ­Ø³Ø§Ø¨ ÙˆÙ‚Øª Ù…Ø³ØªÙ‚Ù„ØŒ Ø­ØªÙ‰ Ø¯Ø§Ø®Ù„ Ù†ÙØ³ Ø§Ù„ØºØ±ÙØ©.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowRooms((value) => !value)}
+              className="min-h-11 rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-bold text-cyan-100"
+            >
+              {showRooms ? "Ø¥Ø®ÙØ§Ø¡ Ø§Ù„ØºØ±Ù" : "ÙØªØ­ Ø§Ù„ØºØ±Ù Ø§Ù„Ø¬Ù…Ø§Ø¹ÙŠØ©"}
+            </button>
+          </div>
+
+          {room && (
+            <div className="mt-5 rounded-2xl border border-cyan-300/20 bg-cyan-300/[0.06] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-white/50">Ø§Ù„ØºØ±ÙØ© Ø§Ù„Ø­Ø§Ù„ÙŠØ©</p>
+                  <p className="mt-1 text-lg font-black">
+                    {room.status === "active" ? "ðŸŒŠ ØºØ±ÙØ© Ù†Ø´Ø·Ø©" : "ðŸ”’ ØºØ±ÙØ© Ù…ØºÙ„Ù‚Ø©"}
+                  </p>
+                </div>
+                <span className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70">
+                  {room.status === "active" ? "Ù…ØªØ§Ø­Ø© Ù„Ù„Ø§Ù†Ø¶Ù…Ø§Ù…" : "Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ù…ØºÙ„Ù‚"}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-black/20 p-3">
+                  <p className="text-xs text-white/45">ÙƒÙˆØ¯ Ø§Ù„Ø¯Ø¹ÙˆØ©</p>
+                  <p dir="ltr" className="mt-1 break-all text-xl font-black tracking-widest text-cyan-200">
+                    {room.invite_code}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-black/20 p-3">
+                  <p className="text-xs text-white/45">ÙˆÙ‚Øª Ø¯Ø±Ø§Ø³ØªÙƒ Ø§Ù„Ø´Ø®ØµÙŠ</p>
+                  <p className="mt-1 text-xl font-black">
+                    {formatHours(studySeconds)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void shareRoom()}
+                  className="min-h-11 flex-1 rounded-xl px-4 py-3 text-sm font-black text-slate-950"
+                  style={{ backgroundColor: theme.accent }}
+                >
+                  â†— Ù…Ø´Ø§Ø±ÙƒØ© Ø±Ø§Ø¨Ø· Ø§Ù„Ø¯Ø¹ÙˆØ©
+                </button>
+
+                {room.host_user_id === userId && room.status === "active" && (
+                  <button
+                    type="button"
+                    disabled={roomBusy}
+                    onClick={() => void closeRoom()}
+                    className="min-h-11 rounded-xl border border-rose-300/20 bg-rose-300/10 px-4 py-3 text-sm font-bold text-rose-100 disabled:opacity-50"
+                  >
+                    {roomBusy ? "Ø¬Ø§Ø±Ù Ø§Ù„ØªÙ†ÙÙŠØ°..." : "Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„ØºØ±ÙØ©"}
+                  </button>
+                )}
+              </div>
+
+              <p className="mt-3 text-xs leading-6 text-white/45">
+                Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„ØºØ±ÙØ© ÙŠÙ…Ù†Ø¹ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø› Ù„Ø§ ÙŠØºÙ„Ù‚ Ø¬Ù„Ø³Ø§Øª Ø§Ù„Ø£Ø¹Ø¶Ø§Ø¡ Ø§Ù„Ø´Ø®ØµÙŠØ© ÙˆÙ„Ø§ ÙŠØ¯Ù…Ø¬ Ø£ÙˆÙ‚Ø§ØªÙ‡Ù….
+              </p>
+            </div>
+          )}
+
+          {showRooms && (
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <span className="text-2xl">âœ¨</span>
+                <h3 className="mt-2 font-black">Ø£Ù†Ø´Ø¦ ØºØ±ÙØ© Ø¬Ø¯ÙŠØ¯Ø©</h3>
+                <p className="mt-2 text-sm leading-6 text-white/50">
+                  Ø£Ù†Ø´Ø¦ ØºØ±ÙØ© ÙˆØ´Ø§Ø±Ùƒ Ø±Ø§Ø¨Ø·Ù‡Ø§ Ù…Ø¹ Ø£ØµØ¯Ù‚Ø§Ø¦Ùƒ. ÙŠØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø¬Ù„Ø³Ø© Ø´Ø®ØµÙŠØ© Ù„Ùƒ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§.
+                </p>
+                <button
+                  type="button"
+                  disabled={roomBusy || Boolean(session)}
+                  onClick={() => void createRoom()}
+                  className="mt-4 min-h-11 w-full rounded-xl px-4 py-3 text-sm font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ backgroundColor: theme.accent }}
+                >
+                  {roomBusy ? "Ø¬Ø§Ø±Ù Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„ØºØ±ÙØ©..." : "ï¼‹ Ø¥Ù†Ø´Ø§Ø¡ ØºØ±ÙØ©"}
+                </button>
+                {session && (
+                  <p className="mt-2 text-xs leading-5 text-amber-200/70">
+                    Ø£Ù†Ù‡Ù Ø¬Ù„Ø³ØªÙƒ Ø§Ù„Ø­Ø§Ù„ÙŠØ© Ø£ÙˆÙ„Ù‹Ø§ Ù„Ø¥Ù†Ø´Ø§Ø¡ ØºØ±ÙØ© Ø£Ø®Ø±Ù‰.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <span className="text-2xl">ðŸ¤</span>
+                <h3 className="mt-2 font-black">Ø§Ù†Ø¶Ù… Ù„ØºØ±ÙØ© ØµØ¯ÙŠÙ‚Ùƒ</h3>
+                <p className="mt-2 text-sm leading-6 text-white/50">
+                  Ø§Ù„ØµÙ‚ ÙƒÙˆØ¯ Ø§Ù„Ø¯Ø¹ÙˆØ© Ø£Ùˆ Ø§ÙØªØ­ Ø±Ø§Ø¨Ø· Ø§Ù„ØºØ±ÙØ© Ø§Ù„Ø°ÙŠ Ø£Ø±Ø³Ù„Ù‡ Ù„Ùƒ ØµØ¯ÙŠÙ‚Ùƒ.
+                </p>
+                <label className="mt-4 block">
+                  <span className="mb-2 block text-xs text-white/50">ÙƒÙˆØ¯ Ø§Ù„Ø¯Ø¹ÙˆØ©</span>
+                  <input
+                    value={inviteCodeInput}
+                    onChange={(event) =>
+                      setInviteCodeInput(normalizeInviteCode(event.target.value))
+                    }
+                    placeholder="Ù…Ø«Ø§Ù„: A1B2C3D4"
+                    dir="ltr"
+                    maxLength={32}
+                    className="min-h-12 w-full rounded-xl border border-white/10 bg-[#071426] px-4 py-3 text-center font-mono font-black tracking-widest text-white outline-none focus:border-cyan-300/50"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={roomBusy || Boolean(session)}
+                  onClick={() => void joinRoom()}
+                  className="mt-3 min-h-11 w-full rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm font-black text-cyan-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {roomBusy ? "Ø¬Ø§Ø±Ù Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù…..." : "Ø§Ù†Ø¶Ù… Ù„Ù„ØºØ±ÙØ©"}
+                </button>
+                {session && (
+                  <p className="mt-2 text-xs leading-5 text-amber-200/70">
+                    Ø£Ù†Ù‡Ù Ø¬Ù„Ø³ØªÙƒ Ø§Ù„Ø­Ø§Ù„ÙŠØ© Ù‚Ø¨Ù„ Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ù„ØºØ±ÙØ© Ø£Ø®Ø±Ù‰.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ØªØ±ØªÙŠØ¨ Ø§Ù„Ø·Ù„Ø¨Ø© Ø§Ù„Ù…Ø³ØªÙ‚Ù„ Ø¹Ù† XP */}
+        <section className="mb-6 rounded-3xl border border-white/10 bg-[#020617]/65 p-4 backdrop-blur-xl sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black tracking-widest text-cyan-300">
+                STUDY LEADERBOARD
+              </p>
+              <h2 className="mt-2 text-xl font-black">ðŸ† ØªØ±ØªÙŠØ¨ Ø§Ù„Ø·Ù„Ø¨Ø© ÙÙŠ Ø§Ù„Ø¯Ø±Ø§Ø³Ø©</h2>
+              <p className="mt-2 text-sm leading-6 text-white/50">
+                Ø§Ù„ØªØ±ØªÙŠØ¨ Ø­Ø³Ø¨ ÙˆÙ‚Øª Ø§Ù„Ø¯Ø±Ø§Ø³Ø© Ø§Ù„Ù…Ø³Ø¬Ù‘Ù„ØŒ Ø«Ù… Ø§Ù„Ø¬Ù„Ø³Ø§Øª Ø§Ù„Ù…ÙƒØªÙ…Ù„Ø© ÙˆØ¯ÙˆØ±Ø§Øª PomodoroØ› Ù…Ø³ØªÙ‚Ù„ Ø¹Ù† XP.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={leaderboardLoading}
+              onClick={() => void loadLeaderboard()}
+              className="min-h-10 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-cyan-100 disabled:opacity-50"
+            >
+              {leaderboardLoading ? "Ø¬Ø§Ø±Ù Ø§Ù„ØªØ­Ø¯ÙŠØ«..." : "â†» ØªØ­Ø¯ÙŠØ«"}
+            </button>
+          </div>
+
+          {leaderboard.length === 0 ? (
+            <p className="mt-5 rounded-2xl border border-dashed border-white/10 p-5 text-center text-sm leading-6 text-white/45">
+              {leaderboardLoading
+                ? "Ø¬Ø§Ø±Ù ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØªØ±ØªÙŠØ¨..."
+                : "Ù…Ø§ ÙƒØ§ÙŠÙ†Ø´ ØªØ±ØªÙŠØ¨ Ù…ØªØ§Ø­ Ø­Ø§Ù„ÙŠÙ‹Ø§. Ø£ÙƒÙ…Ù„ Ø¬Ù„Ø³Ø§ØªÙƒ Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ© Ø¨Ø§Ø´ ÙŠØ¸Ù‡Ø± ØªØ±ØªÙŠØ¨ Ø§Ù„Ø·Ù„Ø¨Ø©."}
+            </p>
+          ) : (
+            <div className="mt-5 grid gap-3 md:hidden">
+              {leaderboard.map((entry, index) => (
+                <div
+                  key={entry.user_id}
+                  className={`min-w-0 rounded-2xl border border-white/10 p-3 ${
+                    entry.user_id === userId ? "bg-cyan-300/[0.07] border-cyan-300/30" : "bg-white/[0.025]"
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="shrink-0 pt-1 text-sm font-black text-cyan-200">
+                      #{index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-black">
+                        {entry.first_name} {entry.last_name}
+                        {entry.user_id === userId ? " (You)" : ""}
+                      </p>
+                      {entry.stream && (
+                        <p className="mt-1 break-words text-xs text-white/40">{entry.stream}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="min-w-0 rounded-xl bg-black/20 p-2">
+                      <p className="text-[10px] leading-4 text-white/45">Study time</p>
+                      <p className="mt-1 break-words text-xs font-black" style={{ color: theme.accent }}>
+                        {formatHours(Number(entry.total_study_seconds))}
+                      </p>
+                    </div>
+                    <div className="min-w-0 rounded-xl bg-black/20 p-2">
+                      <p className="text-[10px] leading-4 text-white/45">Sessions</p>
+                      <p className="mt-1 text-sm font-black">{Number(entry.completed_sessions)}</p>
+                    </div>
+                    <div className="min-w-0 rounded-xl bg-black/20 p-2">
+                      <p className="text-[10px] leading-4 text-white/45">Pomodoro</p>
+                      <p className="mt-1 text-sm font-black">{Number(entry.completed_pomodoros)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 hidden overflow-x-auto rounded-2xl border border-white/10 md:block">
+              <table className="w-full min-w-[520px] text-right text-sm">
+                <thead className="bg-white/[0.05] text-xs text-white/50">
+                  <tr>
+                    <th className="px-3 py-3">Ø§Ù„Ø±ØªØ¨Ø©</th>
+                    <th className="px-3 py-3">Ø§Ù„Ø·Ø§Ù„Ø¨</th>
+                    <th className="px-3 py-3">ÙˆÙ‚Øª Ø§Ù„Ø¯Ø±Ø§Ø³Ø©</th>
+                    <th className="px-3 py-3">Ø§Ù„Ø¬Ù„Ø³Ø§Øª</th>
+                    <th className="px-3 py-3">Pomodoro</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((entry, index) => (
+                    <tr
+                      key={entry.user_id}
+                      className={`border-t border-white/[0.07] ${
+                        entry.user_id === userId ? "bg-cyan-300/[0.07]" : ""
+                      }`}
+                    >
+                      <td className="px-3 py-3 font-black text-cyan-200">
+                        {index === 0 ? "ðŸ¥‡" : index === 1 ? "ðŸ¥ˆ" : index === 2 ? "ðŸ¥‰" : `#${index + 1}`}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="font-bold">
+                          {entry.first_name} {entry.last_name}
+                          {entry.user_id === userId ? " (Ø£Ù†Øª)" : ""}
+                        </span>
+                        {entry.stream && (
+                          <span className="mt-1 block text-xs text-white/40">
+                            {entry.stream}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 font-black" style={{ color: theme.accent }}>
+                        {formatHours(Number(entry.total_study_seconds))}
+                      </td>
+                      <td className="px-3 py-3 text-white/75">
+                        {Number(entry.completed_sessions)}
+                      </td>
+                      <td className="px-3 py-3 text-white/75">
+                        {Number(entry.completed_pomodoros)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {showSettings && (
+          <section className="mb-6 rounded-3xl border border-white/10 bg-[#020617]/60 p-4 backdrop-blur-xl sm:p-7">
+            <div className="mb-5">
+              <p className="text-xs font-black tracking-widest text-cyan-300">
+                YOUR ENVIRONMENT
+              </p>
+              <h2 className="mt-2 text-xl font-black">Ø§Ø®ØªØ§Ø± Ø§Ù„Ø£Ø¬ÙˆØ§Ø¡ ØªØ§Ø¹Ùƒ</h2>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {THEMES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={themeId === item.id}
+                  onClick={() => setThemeId(item.id)}
+                  className={`min-w-0 rounded-2xl border p-3 text-right transition ${
+                    themeId === item.id
+                      ? "border-cyan-300 ring-2 ring-cyan-300/20"
+                      : "border-white/10 hover:border-white/30"
+                  }`}
+                  style={{ background: item.background }}
+                >
+                  <span className="mb-4 block h-10 rounded-xl border border-white/10 bg-white/5 sm:h-12" />
+                  <span className="block break-words text-sm font-black">{item.name}</span>
+                  <span className="mt-1 block text-xs leading-5 text-white/55">
+                    {item.description}
+                  </span>
+                  {themeId === item.id && (
+                    <span className="mt-2 block text-xs font-bold text-cyan-200">âœ“ Ù…Ø®ØªØ§Ø±</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-7">
+              <h3 className="mb-2 font-black">Ø§Ù„Ø£ØµÙˆØ§Øª Ø§Ù„Ù…Ø±ÙŠØ­Ø©</h3>
+              <p className="mb-4 text-xs leading-6 text-white/45">
+                Ø§Ø®ØªØ§Ø± ØµÙˆØªÙ‹Ø§ Ø·Ø¨ÙŠØ¹ÙŠÙ‹Ø§. Ø§Ù„ØµÙˆØª ÙŠØ´ØªØºÙ„ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø© ÙˆÙŠØªÙˆÙ‚Ù Ø¹Ù†Ø¯ Ø§Ù„Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„Ù…Ø¤Ù‚Øª.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {SOUNDS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-pressed={sound === item.id}
+                    onClick={() => {
+                      setSound(item.id);
+                      setErrorMessage("");
+                      setMessage(
+                        item.id === "off"
+                          ? "ØªÙ… Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØµÙˆØª."
+                          : running
+                            ? "ØªÙ… ØªØºÙŠÙŠØ± Ø§Ù„ØµÙˆØª."
+                            : "ØªÙ… Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„ØµÙˆØª. ÙŠØ¨Ø¯Ø£ Ù…Ø¹ Ø¬Ù„Ø³Ø© Ø§Ù„Ø¯Ø±Ø§Ø³Ø©."
+                      );
+                    }}
+                    className={`min-h-[100px] min-w-0 rounded-2xl border px-3 py-4 text-sm font-bold transition ${
+                      sound === item.id
+                        ? "border-cyan-300 bg-cyan-300/10 text-cyan-100 ring-1 ring-cyan-300/20"
+                        : "border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.07]"
+                    }`}
+                  >
+                    <span className="mb-2 block text-2xl">{item.icon}</span>
+                    <span className="block break-words leading-5">{item.label}</span>
+                    {sound === item.id && (
+                      <span className="mt-2 block text-[11px] text-cyan-200">âœ“ Ù…Ø®ØªØ§Ø±</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {sound !== "off" && (
+                <div className="mt-4 rounded-2xl bg-white/[0.04] p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-white/75">ðŸŽšï¸ Ù…Ø³ØªÙˆÙ‰ Ø§Ù„ØµÙˆØª</span>
+                    <span className="text-sm font-black tabular-nums text-cyan-200">{volume}%</span>
+                  </div>
+                  <input
+                    aria-label="Ù…Ø³ØªÙˆÙ‰ Ø§Ù„ØµÙˆØª"
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={volume}
+                    onChange={(event) => setVolume(Number(event.target.value))}
+                    className="block min-h-8 w-full cursor-pointer accent-cyan-300"
+                  />
+                  <div className="mt-1 flex justify-between text-[11px] text-white/35">
+                    <span>Ù‡Ø§Ø¯Ø¦</span>
+                    <span>Ù…Ø±ØªÙØ¹</span>
+                  </div>
+                  {volume === 0 && (
+                    <p className="mt-3 text-xs text-amber-200/80">Ø§Ù„ØµÙˆØª Ù…ÙƒØªÙˆÙ…. Ø§Ø±ÙØ¹ Ø§Ù„Ù…Ø³ØªÙˆÙ‰ Ù„Ø³Ù…Ø§Ø¹Ù‡.</p>
+                  )}
+                  {!running && (
+                    <p className="mt-3 text-xs leading-6 text-white/40">
+                      Ø§Ø¶ØºØ· Â«Ø§Ø¨Ø¯Ø£ Ø§Ù„Ø¯Ø±Ø§Ø³Ø©Â» Ø¨Ø§Ø´ ÙŠØ¨Ø¯Ø£ Ø§Ù„ØµÙˆØª Ø§Ù„Ù…Ø®ØªØ§Ø±.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <p className="mt-3 text-xs leading-6 text-white/40">
+                Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„ØµÙˆØªÙŠØ© ØªÙØ­Ù…Ù‘Ù„ Ù…Ù† Ù…Ø¬Ù„Ø¯ sounds Ø¯Ø§Ø®Ù„ public.
+              </p>
+            </div>
+          </section>
+        )}
+
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-6">
+          <section className="min-w-0 rounded-[1.5rem] border border-white/10 bg-[#020617]/50 p-4 shadow-2xl shadow-black/20 backdrop-blur-2xl sm:rounded-[2rem] sm:p-8 lg:p-10">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-black tracking-[0.2em] text-cyan-300/80">
+                  FOCUS SESSION
+                </p>
+                <h2 className="mt-2 text-xl font-black sm:text-2xl">
+                  ÙˆÙ‚ØªÙƒØŒ ØªØ±ÙƒÙŠØ²ÙƒØŒ Ø¥Ù†Ø¬Ø§Ø²Ùƒ
+                </h2>
+              </div>
+              <span className="self-start rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/60">
+                {running ? "â— Ø§Ù„Ø¬Ù„Ø³Ø© Ø¬Ø§Ø±ÙŠØ©" : session ? "Ø§Ù„Ø¬Ù„Ø³Ø© Ù…ØªÙˆÙ‚ÙØ©" : "Ø¬Ø§Ù‡Ø² Ù„Ù„Ø¨Ø¯Ø¡"}
+              </span>
+            </div>
+
+            {room && (
+              <div className="mb-5 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.05] p-3 text-sm leading-6 text-cyan-100/80">
+                ðŸŒŠ Ø±Ø§Ùƒ ÙÙŠ ØºØ±ÙØ© Ø¬Ù…Ø§Ø¹ÙŠØ©. Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ù…Ø³Ø¬Ù‘Ù„ Ù‡Ù†Ø§ ÙŠØ®Øµ Ø­Ø³Ø§Ø¨Ùƒ ÙˆØ­Ø¯Ùƒ.
+              </div>
+            )}
+
+            <div className="mb-6 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+              <button
+                type="button"
+                disabled={Boolean(session)}
+                onClick={() => {
+                  setSessionType("free");
+                  setPhase("work");
+                  setPhaseSeconds(0);
+                }}
+                className={`min-w-0 rounded-2xl border p-4 text-right transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  sessionType === "free"
+                    ? "border-cyan-300/60 bg-cyan-300/10"
+                    : "border-white/10 bg-white/[0.025] hover:bg-white/[0.05]"
+                }`}
+              >
+                <span className="block text-2xl">â±ï¸</span>
+                <span className="mt-2 block font-black">Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø­Ø±</span>
+                <span className="mt-1 block text-xs leading-5 text-white/45">
+                  Ø§Ø¯Ø±Ø³ Ø¹Ù„Ù‰ Ø±Ø§Ø­ØªÙƒ Ø¨Ù„Ø§ Ø­Ø¯Ù‘ Ø²Ù…Ù†ÙŠ
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={Boolean(session)}
+                onClick={() => {
+                  setSessionType("pomodoro");
+                  setPhase("work");
+                  setPhaseSeconds(0);
+                }}
+                className={`min-w-0 rounded-2xl border p-4 text-right transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  sessionType === "pomodoro"
+                    ? "border-cyan-300/60 bg-cyan-300/10"
+                    : "border-white/10 bg-white/[0.025] hover:bg-white/[0.05]"
+                }`}
+              >
+                <span className="block text-2xl">ðŸ…</span>
+                <span className="mt-2 block font-black">Pomodoro</span>
+                <span className="mt-1 block text-xs leading-5 text-white/45">
+                  ØªØ±ÙƒÙŠØ² Ù…ØªØ¨ÙˆØ¹ Ø¨Ø§Ø³ØªØ±Ø§Ø­Ø©
+                </span>
+              </button>
+            </div>
+
+            {sessionType === "pomodoro" && !session && (
+              <div className="mb-6 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                <label className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                  <span className="mb-2 block text-xs leading-5 text-white/55">
+                    Ù…Ø¯Ø© Ø§Ù„ØªØ±ÙƒÙŠØ² Ø¨Ø§Ù„Ø¯Ù‚Ø§Ø¦Ù‚
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={workMinutes}
+                    onChange={(event) =>
+                      setWorkMinutes(Math.min(120, Math.max(1, Number(event.target.value) || 1)))
+                    }
+                    className="w-full min-w-0 bg-transparent text-xl font-black outline-none"
+                  />
+                </label>
+                <label className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                  <span className="mb-2 block text-xs leading-5 text-white/55">
+                    Ù…Ø¯Ø© Ø§Ù„Ø§Ø³ØªØ±Ø§Ø­Ø© Ø¨Ø§Ù„Ø¯Ù‚Ø§Ø¦Ù‚
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={breakMinutes}
+                    onChange={(event) =>
+                      setBreakMinutes(Math.min(60, Math.max(1, Number(event.target.value) || 1)))
+                    }
+                    className="w-full min-w-0 bg-transparent text-xl font-black outline-none"
+                  />
+                </label>
+              </div>
+            )}
+
+            <label className="mb-6 block">
+              <span className="mb-2 block text-sm font-bold text-white/70">Ø§Ù„Ù…Ø§Ø¯Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©</span>
+              <select
+                value={subjectId}
+                disabled={Boolean(session)}
+                onChange={(event) => setSubjectId(event.target.value)}
+                className="min-h-12 w-full rounded-2xl border border-white/10 bg-[#0b1830] px-4 py-3 text-sm text-white outline-none focus:border-cyan-300/50 disabled:opacity-60"
+              >
+                <option value="">Ø§Ø®ØªØ§Ø± Ø§Ù„Ù…Ø§Ø¯Ø© (Ø§Ø®ØªÙŠØ§Ø±ÙŠ)</option>
+                {subjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>{subject.name}</option>
+                ))}
+              </select>
+              {subjects.length === 0 && (
+                <span className="mt-2 block text-xs leading-5 text-white/40">
+                  Ù…Ø§ Ù„Ù‚ÙŠÙ†Ø§Ø´ Ù…ÙˆØ§Ø¯ Ù…ØªØ§Ø­Ø© Ù„Ø´Ø¹Ø¨ØªÙƒ Ø­Ø§Ù„ÙŠÙ‹Ø§ØŒ ØªÙ‚Ø¯Ø± ØªØ¨Ø¯Ø£ Ø¨Ù„Ø§ Ù…Ø§Ø¯Ø©.
+                </span>
+              )}
+            </label>
+
+            {/* MARIS LIQUID TIMER */}
+            <div className="relative mb-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#020b18]/75 px-3 py-7 text-center shadow-2xl shadow-black/20 sm:rounded-[2rem] sm:px-6 sm:py-9">
+              <div
+                className="pointer-events-none absolute left-1/2 top-0 h-44 w-64 -translate-x-1/2 rounded-full opacity-20 blur-[75px]"
+                style={{ backgroundColor: theme.accent }}
+              />
+
+              <p className="relative text-[10px] font-black tracking-[0.2em] text-white/45 sm:text-xs">
+                {sessionType === "free"
+                  ? "MARIS â€¢ OPEN STUDY"
+                  : phase === "work"
+                    ? "MARIS â€¢ FOCUS MODE"
+                    : "MARIS â€¢ RECOVERY MODE"}
+              </p>
+
+              <h3 className="relative mt-2 text-lg font-black sm:text-xl">
+                {sessionType === "free"
+                  ? "ÙˆÙ‚ØªÙƒ Ù…ÙØªÙˆØ­"
+                  : phase === "work"
+                    ? "ÙƒÙ„ Ø«Ø§Ù†ÙŠØ© ØªÙ‚Ø±Ù‘Ø¨Ùƒ Ù„Ù‡Ø¯ÙÙƒ"
+                    : "Ø§Ø³ØªØ±Ø¬Ø¹ Ø·Ø§Ù‚ØªÙƒ"}
+              </h3>
+
+              <div
+                className="relative mx-auto my-7 aspect-square w-full max-w-[280px] sm:my-8 sm:max-w-[320px]"
+                role="img"
+                aria-label={
+                  sessionType === "pomodoro"
+                    ? `Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ù…ØªØ¨Ù‚ÙŠ ${formatTime(phaseRemaining)}`
+                    : `Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ù„Ù„Ø¯Ø±Ø§Ø³Ø© ${formatTime(studySeconds)}`
+                }
+              >
+                <svg viewBox="0 0 300 300" className="absolute inset-0 h-full w-full" aria-hidden="true">
+                  <defs>
+                    <clipPath id="maris-liquid-clip">
+                      <circle cx="150" cy="150" r="128" />
+                    </clipPath>
+                    <linearGradient id="maris-liquid-gradient" x1="0" y1="0" x2="0.8" y2="1">
+                      <stop offset="0%" stopColor="#a5f3fc" />
+                      <stop offset="40%" stopColor="#22d3ee" />
+                      <stop offset="100%" stopColor="#0369a1" />
+                    </linearGradient>
+                    <linearGradient id="maris-liquid-shade" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#ffffff" stopOpacity=".12" />
+                      <stop offset="100%" stopColor="#020617" stopOpacity=".25" />
+                    </linearGradient>
+                  </defs>
+
+                  <circle cx="150" cy="150" r="140" fill="none" stroke="white" strokeOpacity=".045" />
+                  <circle cx="150" cy="150" r="133" fill="#061525" stroke="white" strokeOpacity=".12" />
+
+                  {sessionType === "pomodoro" && (
+                    <g clipPath="url(#maris-liquid-clip)">
+                      <rect x="0" y={waterY} width="300" height={Math.max(0, 300 - waterY)} fill="#22d3ee" opacity=".18" />
+                      <path
+                        d={`M -300 ${waterY} Q -225 ${waterY - 9} -150 ${waterY} T 0 ${waterY} T 150 ${waterY} T 300 ${waterY} T 450 ${waterY} T 600 ${waterY} L 600 300 L -300 300 Z`}
+                        fill="url(#maris-liquid-gradient)"
+                        className={running ? "maris-wave-primary" : ""}
+                      />
+                      <path
+                        d={`M -300 ${waterY + 7} Q -225 ${waterY - 1} -150 ${waterY + 7} T 0 ${waterY + 7} T 150 ${waterY + 7} T 300 ${waterY + 7} T 450 ${waterY + 7} T 600 ${waterY + 7} L 600 300 L -300 300 Z`}
+                        fill="#a5f3fc"
+                        opacity=".22"
+                        className={running ? "maris-wave-secondary" : ""}
+                      />
+                      <rect x="0" y={waterY} width="300" height={Math.max(0, 300 - waterY)} fill="url(#maris-liquid-shade)" />
+                      {waterLevel > 0.12 && (
+                        <>
+                          <circle cx="76" cy="205" r="3" fill="#ecfeff" opacity=".6" />
+                          <circle cx="205" cy="228" r="2" fill="#ecfeff" opacity=".7" />
+                          <circle cx="98" cy="250" r="2" fill="#ecfeff" opacity=".5" />
+                        </>
+                      )}
+                    </g>
+                  )}
+
+                  <circle cx="150" cy="150" r="128" fill="none" stroke="white" strokeOpacity=".14" />
+                  {sessionType === "pomodoro" && (
+                    <circle
+                      cx="150"
+                      cy="150"
+                      r="133"
+                      fill="none"
+                      stroke={theme.accent}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringCircumference * (1 - waterLevel)}
+                      transform="rotate(-90 150 150)"
+                      style={{
+                        transition: "stroke-dashoffset 0.8s linear",
+                        filter: `drop-shadow(0 0 5px ${theme.accent}70)`,
+                      }}
+                    />
+                  )}
+                  {sessionType === "free" && (
+                    <circle cx="150" cy="150" r="133" fill="none" stroke={theme.accent} strokeOpacity=".65" strokeWidth="2" />
+                  )}
+                </svg>
+
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-2">
+                  <span className="mb-3 rounded-full border border-white/15 bg-[#061525]/80 px-3 py-1.5 text-[10px] font-black text-white/90 shadow-lg backdrop-blur-md sm:text-xs">
+                    {sessionType === "free" ? "â±ï¸ Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø­Ø±" : phase === "work" ? "ðŸ”¥ ØªØ±ÙƒÙŠØ²" : "â˜• Ø§Ø³ØªØ±Ø§Ø­Ø©"}
+                  </span>
+                  <div
+                    className="whitespace-nowrap font-mono text-[clamp(1.8rem,8.5vw,3.5rem)] font-black tabular-nums tracking-[-0.06em] text-white"
+                    dir="ltr"
+                    style={{ textShadow: "0 3px 24px rgba(0,0,0,.8)", fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {sessionType === "free" ? formatTime(studySeconds) : formatTime(phaseRemaining)}
+                  </div>
+                  <span className="mt-3 text-[10px] font-bold text-white/90 sm:text-xs">
+                    {sessionType === "free" ? "Ø§Ù„ÙˆÙ‚Øª ÙŠØ²ÙŠØ¯ Ù…Ø¹ Ø§Ø³ØªÙ…Ø±Ø§Ø± Ø§Ù„Ø¯Ø±Ø§Ø³Ø©" : `Ø¨Ø§Ù‚ÙŠ ${Math.round(waterLevel * 100)}Ùª Ù…Ù† Ø§Ù„ÙØªØ±Ø©`}
+                  </span>
+                </div>
+              </div>
+
+              <p className="relative text-sm font-bold text-white/75">
+                {sessionType === "free"
+                  ? "ÙƒÙ„ Ø¯Ù‚ÙŠÙ‚Ø© ØªÙ‚Ø±Ø§Ù‡Ø§ ØªÙ‚Ø±Ù‘Ø¨Ùƒ Ù„Ù‡Ø¯ÙÙƒ ðŸ’™"
+                  : phase === "work"
+                    ? "Ø±ÙƒÙ‘Ø² Ø¹Ù„Ù‰ Ù…Ù‡Ù…ØªÙƒØŒ ÙˆØ®Ù„ÙŠ Ø§Ù„Ø¨Ø§Ù‚ÙŠ Ø¹Ù„ÙŠÙ†Ø§."
+                    : "Ø§Ø³ØªØ±Ø§Ø­Ø© Ù‚ØµÙŠØ±Ø© ØªØ³Ø§Ø¹Ø¯Ùƒ ØªØ±Ø¬Ø¹ Ø¨Ù†Ø´Ø§Ø·."}
+              </p>
+
+              {sessionType === "pomodoro" && (
+                <div className="relative mx-auto mt-5 max-w-sm">
+                  <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                    <span className="text-white/50">ØªÙ‚Ø¯Ù‘Ù… Ø§Ù„ÙØªØ±Ø©</span>
+                    <span className="font-black tabular-nums" style={{ color: theme.accent }}>
+                      {Math.round(progress)}Ùª
+                    </span>
+                  </div>
+                  <div
+                    className="h-1.5 overflow-hidden rounded-full bg-white/10"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(progress)}
+                    aria-label="Ù†Ø³Ø¨Ø© Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ù…Ù†Ù‚Ø¶ÙŠ"
+                  >
+                    <div className="h-full rounded-full transition-[width] duration-1000" style={{ width: `${progress}%`, backgroundColor: theme.accent }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="relative mt-6 flex flex-wrap items-center justify-center gap-2 text-xs text-white/65">
+                <span className="rounded-full border border-white/10 bg-[#061525]/80 px-3 py-2">ðŸ“š Ø¯Ø±Ø§Ø³Ø©: {formatTime(studySeconds)}</span>
+                {sessionType === "pomodoro" && (
+                  <>
+                    <span className="rounded-full border border-white/10 bg-[#061525]/80 px-3 py-2">â˜• Ø§Ø³ØªØ±Ø§Ø­Ø©: {formatTime(breakSeconds)}</span>
+                    <span className="rounded-full border border-white/10 bg-[#061525]/80 px-3 py-2">ðŸ… {completedPomodoros} Ù…ÙƒØªÙ…Ù„Ø©</span>
+                  </>
+                )}
+              </div>
+
+              <style jsx>{`
+                .maris-wave-primary {
+                  animation: maris-wave-motion 7s linear infinite;
+                  will-change: transform;
+                }
+                .maris-wave-secondary {
+                  animation: maris-wave-motion 10s linear infinite reverse;
+                  will-change: transform;
+                }
+                @keyframes maris-wave-motion {
+                  from { transform: translateX(0); }
+                  to { transform: translateX(-150px); }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                  .maris-wave-primary, .maris-wave-secondary {
+                    animation: none !important;
+                  }
+                }
+              `}</style>
+            </div>
+
+            <label className="mb-6 block">
+              <span className="mb-2 block text-sm font-bold text-white/70">Ù‡Ø¯Ù Ø§Ù„Ø¬Ù„Ø³Ø© Ø£Ùˆ Ù…Ù„Ø§Ø­Ø¸Ø§ØªÙƒ</span>
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                rows={3}
+                placeholder="Ù…Ø«Ù„Ø§Ù‹: Ù…Ø±Ø§Ø¬Ø¹Ø© Ø¯Ø±Ø³ Ø§Ù„Ø§Ø´ØªÙ‚Ø§Ù‚ ÙˆØ­Ù„ 5 ØªÙ…Ø§Ø±ÙŠÙ†..."
+                className="w-full resize-y rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-3 text-sm leading-7 outline-none transition placeholder:text-white/25 focus:border-cyan-300/50"
+              />
+            </label>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {!running ? (
+                <button
+                  type="button"
+                  onClick={() => void beginSession()}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-2xl px-5 py-4 font-black text-slate-950 shadow-xl shadow-cyan-950/20 transition hover:brightness-110 active:scale-[0.99]"
+                  style={{ backgroundColor: theme.accent }}
+                >
+                  â–¶ {session ? "Ø§Ø³ØªØ¦Ù†Ø§Ù Ø§Ù„Ø¬Ù„Ø³Ø©" : "Ø§Ø¨Ø¯Ø£ Ø§Ù„Ø¯Ø±Ø§Ø³Ø©"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void pauseSession()}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-5 py-4 font-black text-amber-100 transition hover:bg-amber-300/15"
+                >
+                  â…¡ Ø¥ÙŠÙ‚Ø§Ù Ù…Ø¤Ù‚Øª
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={!session}
+                onClick={() => void finishSession()}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-5 py-4 font-black text-white transition hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                âœ“ Ø¥Ù†Ù‡Ø§Ø¡ ÙˆØ­ÙØ¸ Ø§Ù„Ø¬Ù„Ø³Ø©
+              </button>
+            </div>
+
+            {session && (
+              <div className="mt-4 flex flex-col gap-3 min-[420px]:flex-row min-[420px]:flex-wrap min-[420px]:items-center min-[420px]:justify-between">
+                <span className="text-xs leading-5 text-white/40">
+                  {saving ? "Ø¬Ø§Ø±Ù Ø­ÙØ¸ Ø¨ÙŠØ§Ù†Ø§ØªÙƒ..." : "Ø§Ù„Ø­ÙØ¸ Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ ÙƒÙ„ 15 Ø«Ø§Ù†ÙŠØ©"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void cancelSession()}
+                  className="min-h-10 self-start text-xs font-bold text-rose-300/70 transition hover:text-rose-200"
+                >
+                  Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø¬Ù„Ø³Ø©
+                </button>
+              </div>
+            )}
+
+            {sessionType === "pomodoro" && running && (
+              <button
+                type="button"
+                onClick={resetPhase}
+                className="mt-4 min-h-11 w-full rounded-xl border border-white/5 px-4 py-3 text-xs font-bold text-white/45 transition hover:bg-white/5 hover:text-white/80"
+              >
+                Ø¥Ø¹Ø§Ø¯Ø© Ø¶Ø¨Ø· Ø§Ù„ÙØªØ±Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©
+              </button>
+            )}
+          </section>
+
+          <aside className="min-w-0 space-y-5">
+            <section className="rounded-3xl border border-white/10 bg-[#020617]/50 p-4 backdrop-blur-xl sm:p-5">
+              <p className="text-xs font-black tracking-widest text-cyan-300">STUDY ROUTINE</p>
+              <h2 className="mt-2 text-lg font-black">Ø±ÙˆØªÙŠÙ† Ø¯Ø±Ø§Ø³Ø© ÙØ¹Ù‘Ø§Ù„</h2>
+
+              <div className="mt-5 space-y-4">
+                {[
+                  ["01", "Ø­Ø¯Ù‘Ø¯ Ù‡Ø¯ÙÙƒ", "Ø§Ø¹Ø±Ù ÙˆØ§Ø´ Ø±Ø§Ùƒ Ø­Ø§Ø¨ ØªÙƒÙ…Ù„ Ù‚Ø¨Ù„ Ù…Ø§ ØªØ¨Ø¯Ø£."],
+                  ["02", "Ø§Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø´ØªØªØ§Øª", "Ø®Ù„ÙŠ Ø§Ù„Ù‡Ø§ØªÙ ÙˆØ§Ù„Ø¥Ø´Ø¹Ø§Ø±Ø§Øª Ø¨Ø¹ÙŠØ¯ Ø¹Ù„ÙŠÙƒ."],
+                  ["03", "Ø±ÙƒÙ‘Ø² Ø¹Ù„Ù‰ Ù…Ù‡Ù…Ø©", "Ù…Ø§Ø¯Ø© ÙˆØ§Ø­Ø¯Ø© ÙˆÙ‡Ø¯Ù ÙˆØ§Ø¶Ø­ ÙÙŠ ÙƒÙ„ ÙØªØ±Ø©."],
+                  ["04", "Ø±Ø§Ø¬Ø¹ Ø¥Ù†Ø¬Ø§Ø²Ùƒ", "Ø´ÙˆÙ ÙˆØ§Ø´ ÙƒÙ…Ù„Øª ÙˆØ®Ø·Ù‘Ø· Ù„Ù„Ø¬Ù„Ø³Ø© Ø§Ù„Ø¬Ø§ÙŠØ©."],
+                ].map(([number, title, description]) => (
+                  <div key={number} className="flex min-w-0 gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-xs font-black text-cyan-200">
+                      {number}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-black">{title}</h3>
+                      <p className="mt-1 text-xs leading-6 text-white/45">{description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/10 bg-[#020617]/50 p-4 backdrop-blur-xl sm:p-5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-black tracking-widest text-cyan-300">RECENT SESSIONS</p>
+                  <h2 className="mt-2 text-lg font-black">Ø¬Ù„Ø³Ø§ØªÙƒ Ø§Ù„Ø£Ø®ÙŠØ±Ø©</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHistory((value) => !value)}
+                  className="min-h-10 shrink-0 text-xs font-bold text-cyan-200 hover:text-cyan-100"
+                >
+                  {showHistory ? "Ø¥Ø®ÙØ§Ø¡" : "Ø¹Ø±Ø¶ Ø§Ù„ÙƒÙ„"}
+                </button>
+              </div>
+
+              {history.length === 0 ? (
+                <div className="mt-5 rounded-2xl border border-dashed border-white/10 p-5 text-center">
+                  <span className="text-2xl">ðŸŒ±</span>
+                  <p className="mt-2 text-sm font-bold">Ø¨Ø¯Ø§ÙŠØ© Ø¬Ø¯ÙŠØ¯Ø©</p>
+                  <p className="mt-1 text-xs leading-6 text-white/40">
+                    ÙƒÙŠ ØªÙƒÙ…Ù„ Ø£ÙˆÙ„ Ø¬Ù„Ø³Ø©ØŒ ØªÙ„Ù‚Ø§Ù‡Ø§ Ù‡Ù†Ø§.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {(showHistory ? history : history.slice(0, 3)).map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-bold">
+                          {item.session_type === "pomodoro" ? "ðŸ… Pomodoro" : "â±ï¸ ÙˆÙ‚Øª Ø­Ø±"}
+                        </span>
+                        <span className="shrink-0 text-sm font-black" style={{ color: theme.accent }}>
+                          {formatHours(item.study_seconds)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-white/40">
+                        {new Date(item.started_at).toLocaleDateString("ar-DZ")}
+                        {" Â· "}
+                        {item.completed_pomodoros} ÙØªØ±Ø§Øª Ù…ÙƒØªÙ…Ù„Ø©
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <div className="rounded-3xl border border-cyan-300/15 bg-cyan-300/[0.04] p-5">
+              <p className="text-2xl">ðŸ’™</p>
+              <p className="mt-3 text-sm font-black">Ø®Ø·ÙˆØ© ØµØºÙŠØ±Ø© ÙƒÙ„ ÙŠÙˆÙ…</p>
+              <p className="mt-2 text-xs leading-7 text-white/50">
+                Ù…Ø§Ø´ÙŠ Ø§Ù„Ù…Ù‡Ù… ØªÙ‚Ø±Ø§ Ø³Ø§Ø¹Ø§Øª Ø·ÙˆÙŠÙ„Ø© Ù…Ø±Ø© ÙˆØ­Ø¯Ø©ØŒ Ø§Ù„Ù…Ù‡Ù… ØªØ¨Ù†ÙŠ Ø¹Ø§Ø¯Ø© Ø«Ø§Ø¨ØªØ© ÙˆØªØ³ØªÙ…Ø± Ø¹Ù„ÙŠÙ‡Ø§.
+              </p>
+            </div>
+          </aside>
+        </div>
+
+        <footer className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-white/[0.07] pt-6 text-center text-xs leading-6 text-white/35 sm:flex-row sm:text-right">
+          <span>ðŸ‹ MARIS ACADEMY Â²â°Â²â·</span>
+          <span>
+            {saving ? "Ø¬Ø§Ø±Ù Ø§Ù„Ø­ÙØ¸..." : "Ø¬Ù„Ø³Ø§ØªÙƒ Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø­Ø³Ø§Ø¨Ùƒ ÙˆÙ…Ø­ÙÙˆØ¸Ø© ÙÙŠ Supabase"}
+          </span>
+        </footer>
+      </div>
+    </main>
+  );
+}
+

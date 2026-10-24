@@ -379,6 +379,13 @@ export default function AdminPage() {
               title="إدارة الأساتذة"
             />
 
+            {/* إدارة الخرائط */}
+            <QuickAction
+              href="/admin/maps"
+              icon="🌍"
+              title="إدارة الخرائط"
+            />
+
             <QuickAction
               href="/admin/reels"
               icon="🎬"

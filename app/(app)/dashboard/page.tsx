@@ -88,6 +88,22 @@ const QUICK_LINKS = [
     accent: "from-amber-500/15 to-orange-500/5",
     iconBorder: "border-amber-400/20",
   },
+    {
+    href: "/bac-tools",
+    icon: "🎓",
+    title: "أدوات البكالوريا",
+    description: "احسب معدلك وتابع العدّ التنازلي للباك",
+    accent: "from-cyan-500/15 to-indigo-500/10",
+    iconBorder: "border-cyan-300/20",
+  },
+    {
+    href: "/premium",
+    icon: "💎",
+    title: "MARIS PREMIUM",
+    description: "اكتشف الاشتراكات الشهرية والسنوية ومميزاتها",
+    accent: "from-amber-400/15 to-cyan-500/10",
+    iconBorder: "border-amber-300/25",
+  },
 ];
 
 function SectionHeading({

@@ -15,6 +15,7 @@ import { Spinner } from "@/components/ui";
 import SetupNotice from "@/components/SetupNotice";
 import MarisTour from "@/components/MarisTour";
 import { StreamPreviewProvider } from "@/contexts/stream-preview";
+import MaintenanceScreen from "@/components/MaintenanceScreen";
 
 // ══════════════════════════════════════════════════════
 // MARIS ACADEMY — App Shell
@@ -684,6 +685,13 @@ export default function AppShell({
     setTextColor(DEFAULT_TEXT_COLOR);
     router.replace("/login");
   }
+    if (adminCheckedFor !== session.user.id) {
+    return <Spinner label="جارٍ التحقق من الصلاحيات…" />;
+  }
+
+  if (!isAdmin) {
+    return <MaintenanceScreen />;
+  }
 
   // اختيار صورة الخلفية، مع الرجوع إلى الخلفية القديمة الافتراضية
   const selectedBackground =
@@ -805,7 +813,7 @@ export default function AppShell({
                 }
               />
             ))}
-          </div>
+        </div>
         )}
 
         {/* الشريط العلوي */}
@@ -842,7 +850,7 @@ export default function AppShell({
                 <span className="text-cyan-400">²⁰²⁷</span>
               </span>
             </Link>
-          </div>
+        </div>
         </header>
 
         {/* خلفية إغلاق القائمة */}
@@ -878,7 +886,7 @@ export default function AppShell({
                 <br />
                 ACADEMY{" "}
                 <span className="text-cyan-400">²⁰²⁷</span>
-              </span>
+          </span>
             </Link>
 
             <button
@@ -1032,7 +1040,7 @@ export default function AppShell({
 
         {/* شاشة التحميل السينمائية */}
         {showCinematicLoader && (
-          <div
+            <div
             role="status"
             aria-live="polite"
             aria-label="جارٍ تجهيز MARIS ACADEMY"
@@ -1069,7 +1077,7 @@ export default function AppShell({
                 <span className="bg-gradient-to-b from-white via-sky-200 to-blue-400 bg-clip-text font-serif text-6xl font-semibold leading-none text-transparent sm:text-7xl">
                   M
                 </span>
-              </div>
+            </div>
 
               <h1
                 dir="ltr"
@@ -1118,7 +1126,7 @@ export default function AppShell({
                 </span>
 
                 <span className="h-px w-8 bg-amber-200/80 sm:w-14" />
-              </div>
+        </div>
 
               <p
                 dir="ltr"
@@ -1170,7 +1178,7 @@ export default function AppShell({
                           : "none",
                     }}
                   />
-                </div>
+      </div>
               </div>
 
               <p className="mt-2 text-center text-[9px] tracking-[0.32em] text-white/70 sm:text-[10px]">

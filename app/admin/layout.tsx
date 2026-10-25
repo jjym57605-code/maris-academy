@@ -7,6 +7,12 @@ import { ReactNode } from "react";
 
 const ADMIN_ITEMS = [
   {
+    label: "إدارة Premium",
+    icon: "💎",
+    href: "/admin/premium",
+    active: true,
+  },
+  {
     label: "الرئيسية",
     icon: "🏠",
     href: "/admin",

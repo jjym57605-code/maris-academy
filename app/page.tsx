@@ -129,36 +129,42 @@ function formatDate(date: string) {
   }).format(parsedDate);
 }
 
+
+
 function ReviewCard({ item }: { item: Review }) {
   return (
     <article
       dir="rtl"
-      className="relative flex min-h-[225px] w-[285px] shrink-0 flex-col overflow-hidden rounded-3xl border border-white/[0.09] bg-[#0b1d31] p-5 shadow-xl shadow-black/10 sm:w-[330px] sm:p-6"
+      className="relative flex min-h-[175px] w-[calc(50vw-30px)] max-w-[240px] shrink-0 flex-col overflow-hidden rounded-2xl border border-white/[0.09] bg-[#0b1d31] p-2.5 shadow-xl shadow-black/10 sm:min-h-[225px] sm:w-[330px] sm:max-w-none sm:rounded-3xl sm:p-6"
     >
       <div
-        className="text-lg tracking-widest text-amber-300"
+        className="text-sm tracking-widest text-amber-300 sm:text-lg"
         dir="ltr"
         aria-label={`${item.rating} من 5`}
       >
         {renderStars(item.rating)}
       </div>
 
-      <p className="mt-5 flex-1 whitespace-normal break-words text-sm leading-8 text-slate-300">
+      <p className="mt-3 flex-1 whitespace-normal break-words text-xs leading-5 text-slate-300 sm:mt-5 sm:text-sm sm:leading-8">
         «{item.review}»
       </p>
 
-      <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/[0.08] pt-4">
-        <span className="text-xs font-bold text-cyan-300">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-white/[0.08] pt-3 sm:mt-5 sm:flex-nowrap sm:gap-3 sm:pt-4">
+        <span className="text-[9px] font-bold text-cyan-300 sm:text-xs">
           طالب من MARIS 💙
         </span>
 
-        <span className="shrink-0 text-[11px] text-slate-500">
+        <span className="shrink-0 text-[9px] text-slate-500 sm:text-[11px]">
           {formatDate(item.created_at)}
         </span>
       </div>
     </article>
   );
 }
+
+
+
+
 
 function ReviewRow({
   items,
@@ -170,6 +176,23 @@ function ReviewRow({
   label: string;
 }) {
   if (items.length === 0) return null;
+
+  // أقل من 4 آراء: عرض ثابت بلا تكرار.
+if (items.length < 4) {
+  return (
+    <div
+      className="w-full overflow-hidden px-3 pb-2"
+      role="region"
+      aria-label={label}
+    >
+      <div className="flex w-full flex-wrap justify-center gap-3">
+        {items.map((item) => (
+          <ReviewCard key={item.id} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
   return (
     <div
@@ -192,7 +215,10 @@ function ReviewRow({
             aria-hidden={copy !== 0}
           >
             {items.map((item) => (
-              <ReviewCard key={`${copy}-${item.id}`} item={item} />
+              <ReviewCard
+                key={`${copy}-${item.id}`}
+                item={item}
+              />
             ))}
           </div>
         ))}
@@ -200,6 +226,8 @@ function ReviewRow({
     </div>
   );
 }
+
+
 
 export default function LandingPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -700,6 +728,7 @@ export default function LandingPage() {
 
 
 
+
         {/* المميزات */}
         <section
           id="features"
@@ -722,37 +751,38 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-5">
             {FEATURES.map((feature) => (
               <article
                 key={feature.number}
-                className="maris-feature-card group relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0a1a2b]/90 p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/25 sm:p-7"
+                className="maris-feature-card group relative flex min-w-0 flex-col items-center overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0a1a2b]/90 p-2.5 text-center transition duration-300 hover:-translate-y-1 hover:border-cyan-300/25 sm:items-stretch sm:rounded-3xl sm:p-7 sm:text-right"
               >
                 <div
                   aria-hidden="true"
-                  className={`absolute inset-x-0 top-0 h-28 bg-gradient-to-b ${feature.color} opacity-70 transition group-hover:opacity-100`}
+                  className={`absolute inset-x-0 top-0 h-16 bg-gradient-to-b sm:h-28 ${feature.color} opacity-70 transition group-hover:opacity-100`}
                 />
 
-                <div className="relative flex items-center justify-between">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-[#10253a] text-3xl shadow-lg">
+                <div className="relative flex w-full items-center justify-center sm:justify-between">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-[#10253a] text-xl shadow-lg sm:h-14 sm:w-14 sm:rounded-2xl sm:text-3xl">
                     {feature.icon}
                   </span>
-                  <span className="font-grotesk text-sm font-bold tracking-widest text-slate-600">
+
+                  <span className="hidden font-grotesk text-sm font-bold tracking-widest text-slate-600 sm:inline">
                     {feature.number}
                   </span>
                 </div>
 
-                <h3 className="relative mt-7 text-xl font-extrabold text-white">
+                <h3 className="relative mt-2 break-words text-[10px] font-extrabold leading-5 text-white min-[380px]:text-[11px] sm:mt-7 sm:text-xl sm:leading-normal">
                   {feature.title}
                 </h3>
 
-                <p className="relative mt-3 text-sm leading-8 text-slate-400">
+                <p className="relative mt-3 hidden text-sm leading-8 text-slate-400 sm:block">
                   {feature.description}
                 </p>
 
                 <div
                   aria-hidden="true"
-                  className="relative mt-6 h-px w-full bg-gradient-to-l from-cyan-300/25 via-white/[0.05] to-transparent"
+                  className="relative mt-2 h-px w-full bg-gradient-to-l from-cyan-300/25 via-white/[0.05] to-transparent sm:mt-6"
                 />
               </article>
             ))}
@@ -766,9 +796,11 @@ export default function LandingPage() {
               <span className="text-sm font-bold text-cyan-300">
                 البداية أسهل مما تتصور
               </span>
+
               <h2 className="mt-4 text-3xl font-black sm:text-4xl">
                 ثلاث خطوات نحو هدفك
               </h2>
+
               <p className="mt-4 text-sm leading-8 text-slate-400">
                 ابدأ ببساطة، نظّم مراجعتك، واجعل كل يوم فرصة جديدة للتقدم.
               </p>
@@ -778,21 +810,21 @@ export default function LandingPage() {
               {STEPS.map((step, index) => (
                 <article
                   key={step.number}
-                  className="relative rounded-3xl border border-white/[0.07] bg-[#0b1d30] p-7 text-center transition hover:border-cyan-300/20"
+                  className="relative rounded-2xl border border-white/[0.07] bg-[#0b1d30] p-4 text-center transition hover:border-cyan-300/20 sm:rounded-3xl sm:p-7"
                 >
-                  <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.07] text-3xl">
+                  <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-2xl sm:h-16 sm:w-16 sm:rounded-2xl sm:text-3xl">
                     {step.icon}
                   </span>
 
-                  <p className="mt-5 text-xs font-bold tracking-widest text-cyan-300">
+                  <p className="mt-3 text-[10px] font-bold tracking-widest text-cyan-300 sm:mt-5 sm:text-xs">
                     الخطوة {step.number}
                   </p>
 
-                  <h3 className="mt-3 text-xl font-extrabold text-white">
+                  <h3 className="mt-2 text-base font-extrabold text-white sm:mt-3 sm:text-xl">
                     {step.title}
                   </h3>
 
-                  <p className="mt-3 text-sm leading-7 text-slate-400">
+                  <p className="mt-2 text-xs leading-6 text-slate-400 sm:mt-3 sm:text-sm sm:leading-7">
                     {step.description}
                   </p>
 
@@ -809,6 +841,7 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
+
 
         {/* آراء الطلبة الحقيقية */}
         {!reviewsLoading && reviews.length > 0 && (
@@ -1128,57 +1161,59 @@ export default function LandingPage() {
           transform: translateZ(0);
         }
 
-        .maris-marquee {
-          direction: ltr;
-        }
+   
+.maris-marquee {
+  direction: ltr;
+}
 
-        .maris-marquee-track {
-          display: flex;
-          width: max-content;
-          gap: 0;
-          will-change: transform;
-          animation-duration: 55s;
-          animation-timing-function: linear;
-          animation-iteration-count: infinite;
-        }
+.maris-marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 0;
+  will-change: transform;
+  animation-duration: 55s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
 
-        .maris-marquee-group {
-          display: flex;
-          flex: 0 0 auto;
-          gap: 1rem;
-          padding-inline: 0.5rem;
-        }
+.maris-marquee-group {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 1rem;
+  padding-inline: 0.5rem;
+}
 
-        .maris-marquee-left {
-          animation-name: maris-marquee-left;
-        }
+.maris-marquee-left {
+  animation-name: maris-marquee-left;
+}
 
-        .maris-marquee-right {
-          animation-name: maris-marquee-right;
-        }
+.maris-marquee-right {
+  animation-name: maris-marquee-right;
+}
 
-        .maris-marquee:hover .maris-marquee-track,
-        .maris-marquee:focus-within .maris-marquee-track {
-          animation-play-state: paused;
-        }
+.maris-marquee:hover .maris-marquee-track,
+.maris-marquee:focus-within .maris-marquee-track {
+  animation-play-state: paused;
+}
 
-        @keyframes maris-marquee-left {
-          from {
-            transform: translateX(0);
-          }
-          to {
-            transform: translateX(-33.333333%);
-          }
-        }
+@keyframes maris-marquee-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-33.333333%);
+  }
+}
 
-        @keyframes maris-marquee-right {
-          from {
-            transform: translateX(-33.333333%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
+@keyframes maris-marquee-right {
+  from {
+    transform: translateX(-33.333333%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
 
         @keyframes maris-float {
           0%,

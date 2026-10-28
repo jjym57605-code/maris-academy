@@ -344,55 +344,60 @@ export default function AboutPage() {
         </div>
       </section>
 
+
       {/* Features */}
       <section
         id="features"
-        className="relative z-10 mx-auto max-w-7xl scroll-mt-10 px-5 py-20 sm:px-8 sm:py-24"
+        className="relative z-10 mx-auto max-w-7xl scroll-mt-10 px-3 py-14 min-[380px]:px-4 sm:px-8 sm:py-24"
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <span className="text-sm font-black tracking-widest text-cyan-300">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <span className="text-xs font-black tracking-widest text-cyan-300 sm:text-sm">
               THE MARIS EXPERIENCE
             </span>
-            <h2 className="mt-4 text-3xl font-black sm:text-4xl">
+            <h2 className="mt-3 text-2xl font-black leading-relaxed sm:mt-4 sm:text-4xl">
               أدوات تساعدك في رحلتك
             </h2>
           </div>
 
-          <p className="max-w-xl leading-8 text-slate-400">
+          <p className="max-w-xl text-sm leading-7 text-slate-400 sm:text-base sm:leading-8">
             تجربة تجمع بين التعلم والتدريب والمتابعة، حتى تكون خطواتك الدراسية
             أوضح وأكثر تنظيمًا.
           </p>
         </div>
 
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-7 grid grid-cols-3 gap-2 sm:mt-10 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 lg:gap-5">
           {FEATURES.map((feature, index) => (
             <article
               key={feature.title}
-              className="group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-gradient-to-br from-white/[0.04] to-transparent p-6 transition duration-300 hover:-translate-y-1 hover:border-cyan-200/25 hover:bg-cyan-200/[0.025] sm:p-7"
+              className="group relative flex min-w-0 flex-col items-center overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.04] to-transparent p-2.5 text-center transition duration-300 hover:border-cyan-200/25 min-[380px]:p-3 sm:items-stretch sm:rounded-3xl sm:p-7 sm:text-right"
             >
-              <div className="absolute -left-10 -top-10 h-28 w-28 rounded-full bg-cyan-300/[0.035] blur-2xl transition group-hover:bg-cyan-300/[0.08]" />
+              <div className="absolute -left-5 -top-5 h-16 w-16 rounded-full bg-cyan-300/[0.035] blur-2xl transition group-hover:bg-cyan-300/[0.08] sm:-left-10 sm:-top-10 sm:h-28 sm:w-28" />
 
-              <div className="relative flex items-start justify-between">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-200/15 bg-cyan-200/[0.06] text-3xl transition duration-300 group-hover:scale-105">
+              <div className="relative flex w-full items-center justify-center sm:justify-between">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-cyan-200/15 bg-cyan-200/[0.06] text-lg transition duration-300 group-hover:scale-105 min-[380px]:h-9 min-[380px]:w-9 sm:h-14 sm:w-14 sm:rounded-2xl sm:text-3xl">
                   {feature.icon}
                 </div>
 
-                <span className="text-xs font-black tracking-widest text-white/20">
+                <span className="hidden text-xs font-black tracking-widest text-white/20 sm:inline">
                   0{index + 1}
                 </span>
               </div>
 
-              <h3 className="relative mt-6 text-lg font-black">
+              <h3 className="relative mt-2 break-words text-[10px] font-black leading-5 text-white min-[380px]:text-[11px] sm:mt-6 sm:text-lg">
                 {feature.title}
               </h3>
-              <p className="relative mt-3 text-sm leading-7 text-slate-400">
+
+              <p className="relative mt-3 hidden text-sm leading-7 text-slate-400 sm:block">
                 {feature.description}
               </p>
+
+              <div className="relative mt-2 h-px w-full bg-gradient-to-l from-cyan-300/25 via-white/[0.05] to-transparent sm:mt-6" />
             </article>
           ))}
         </div>
       </section>
+
 
       {/* Philosophy */}
       <section className="relative z-10 mx-5 overflow-hidden rounded-[2rem] border border-cyan-200/10 bg-gradient-to-l from-cyan-300/[0.08] via-[#10263a]/70 to-blue-400/[0.04] sm:mx-8 lg:mx-auto lg:max-w-7xl">

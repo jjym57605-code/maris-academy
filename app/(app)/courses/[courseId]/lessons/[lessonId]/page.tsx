@@ -20,36 +20,30 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-// ══════════════════════════════════════════════════════
-// صفحة الدرس — فيديو + المحتوى + المصادر + التقدم الحقيقي
-// ══════════════════════════════════════════════════════
+type CourseWithSubject = Course & { subject: Subject | null };
 
 export default function LessonPage() {
-  const params = useParams<{
+  const { courseId, lessonId } = useParams<{
     courseId: string;
     lessonId: string;
   }>();
 
-  const { courseId, lessonId } = params;
-
-  const [course, setCourse] = useState<
-    (Course & { subject: Subject | null }) | null
-  >(null);
-
+  const [course, setCourse] = useState<CourseWithSubject | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [lesson, setLesson] = useState<Lesson | null>(null);
-
   const [completed, setCompleted] = useState(false);
   const [completing, setCompleting] = useState(false);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hasAccess, setHasAccess] = useState(false);
 
   const load = useCallback(async () => {
     const supabase = getSupabase();
-
-    if (!supabase) return;
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
 
     setError(false);
     setLoading(true);
@@ -59,24 +53,61 @@ export default function LessonPage() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setCourse(null);
+        setLesson(null);
+        return;
+      }
 
-      const [courseData, lessonsData, completedIds] =
-        await Promise.all([
-          getCourse(supabase, courseId),
-          getCourseLessons(supabase, courseId),
-          getCompletedLessonIds(supabase, user.id),
-        ]);
+      const courseData = await getCourse(supabase, courseId);
+      setCourse(courseData);
+
+      if (!courseData) {
+        setLesson(null);
+        return;
+      }
+
+      let allowed = Boolean(courseData.is_free);
+
+      if (!courseData.is_free) {
+        const now = new Date().toISOString();
+
+        const { data: subscription, error: subscriptionError } =
+          await supabase
+            .from("premium_subscriptions")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("status", "active")
+            .lte("starts_at", now)
+            .gt("expires_at", now)
+            .limit(1)
+            .maybeSingle();
+
+        if (subscriptionError) throw subscriptionError;
+
+        allowed = Boolean(subscription);
+      }
+
+      setHasAccess(allowed);
+
+      if (!allowed) {
+        setLessons([]);
+        setLesson(null);
+        setCompleted(false);
+        return;
+      }
+
+      const [lessonsData, completedIds] = await Promise.all([
+        getCourseLessons(supabase, courseId),
+        getCompletedLessonIds(supabase, user.id),
+      ]);
 
       const current =
-        lessonsData.find((l) => l.id === lessonId) ?? null;
+        lessonsData.find((item) => item.id === lessonId) ?? null;
 
-      setCourse(courseData);
       setLessons(lessonsData);
       setLesson(current);
-      setCompleted(
-        current ? completedIds.has(current.id) : false
-      );
+      setCompleted(current ? completedIds.has(current.id) : false);
     } catch (err) {
       console.error("Lesson page error:", err);
       setError(true);
@@ -91,8 +122,7 @@ export default function LessonPage() {
 
   async function handleComplete() {
     const supabase = getSupabase();
-
-    if (!supabase || !lesson) return;
+    if (!supabase || !lesson || !hasAccess) return;
 
     setCompleting(true);
     setNotice(null);
@@ -104,46 +134,73 @@ export default function LessonPage() {
 
       if (!user) return;
 
-      const result = await completeLesson(
-        supabase,
-        user.id,
-        lesson.id
-      );
-
+      const result = await completeLesson(supabase, user.id, lesson.id);
       setCompleted(true);
-
       setNotice(
         result.alreadyCompleted
           ? "هذا الدرس مكتمل من قبل."
           : "أحسنت! تم تسجيل إتمام الدرس وكسبت 20 XP."
       );
     } catch {
-      setNotice(
-        "حدث خطأ أثناء حفظ التقدم. حاول مرة أخرى."
-      );
+      setNotice("حدث خطأ أثناء حفظ التقدم. حاول مرة أخرى.");
     } finally {
       setCompleting(false);
     }
   }
 
-  if (error) {
-    return <ErrorState onRetry={load} />;
-  }
+  if (loading) return <Spinner />;
+  if (error) return <ErrorState onRetry={load} />;
 
-  if (loading) {
-    return <Spinner />;
-  }
-
-  if (!lesson || !course) {
+  if (!course) {
     return (
       <EmptyState
         icon="🔎"
-        title="هذا الدرس غير موجود."
+        title="هذه الدورة غير موجودة أو غير متاحة."
         action={
+          <Link href="/courses" className="btn-secondary">
+            العودة إلى الدورات
+          </Link>
+        }
+      />
+    );
+  }
+
+  if (!hasAccess) {
+    return (
+      <div dir="rtl" className="space-y-6">
+        <Link
+          href={`/courses/${courseId}`}
+          className="inline-flex min-h-[44px] items-center gap-1 text-sm font-bold text-cyan-300 hover:text-cyan-200"
+        >
+          ← العودة إلى الدورة
+        </Link>
+
+        <GlassCard className="mx-auto max-w-2xl p-8 text-center sm:p-12">
+          <div className="text-6xl">🔒</div>
+          <h1 className="mt-5 text-2xl font-extrabold text-white">
+            محتوى هذا الدرس محمي
+          </h1>
+          <p className="mt-3 leading-7 text-foam/60">
+            يلزمك اشتراك Premium فعّال للوصول إلى دروس هذه الدورة المدفوعة.
+          </p>
           <Link
-            href={`/courses/${courseId}`}
-            className="btn-secondary"
+            href="/premium"
+            className="btn-primary mt-6 inline-flex items-center justify-center"
           >
+            اكتشف اشتراك Premium
+          </Link>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  if (!lesson) {
+    return (
+      <EmptyState
+        icon="🔎"
+        title="هذا الدرس غير موجود أو غير متاح."
+        action={
+          <Link href={`/courses/${courseId}`} className="btn-secondary">
             العودة إلى الدورة
           </Link>
         }
@@ -151,74 +208,50 @@ export default function LessonPage() {
     );
   }
 
-  const index = lessons.findIndex(
-    (l) => l.id === lesson.id
-  );
-
-  const prev =
-    index > 0 ? lessons[index - 1] : null;
-
+  const index = lessons.findIndex((item) => item.id === lesson.id);
+  const prev = index > 0 ? lessons[index - 1] : null;
   const next =
     index >= 0 && index < lessons.length - 1
       ? lessons[index + 1]
       : null;
 
-  const lessonHref = (l: Lesson) =>
-    `/courses/${courseId}/lessons/${l.id}`;
+  const lessonHref = (item: Lesson) =>
+    `/courses/${courseId}/lessons/${item.id}`;
 
   return (
-    <div
-      dir="rtl"
-      className="space-y-6"
-    >
-      {/* العودة إلى الدورة */}
+    <div dir="rtl" className="space-y-6">
       <Link
         href={`/courses/${courseId}`}
-        className="inline-flex min-h-[44px] items-center gap-1 text-sm font-bold text-cyan-300 transition-colors hover:text-cyan-200"
+        className="inline-flex min-h-[44px] items-center gap-1 text-sm font-bold text-cyan-300 hover:text-cyan-200"
       >
         ← العودة إلى الدورة
       </Link>
 
-      {/* Header */}
       <header className="animate-fade-up">
         <p className="text-sm font-bold text-cyan-300">
           {course.subject?.name ?? "مادة"} · {course.title}
         </p>
-
         <h1 className="mt-2 break-words text-2xl font-extrabold leading-snug text-white sm:text-3xl">
           {lesson.title}
         </h1>
-
         <p className="mt-2 text-sm text-foam/50">
           الدرس {index + 1} من {lessons.length}
           {completed && " · مكتمل ✓"}
         </p>
       </header>
 
-      {/* ═══════════════════════════════════════════════════
-          الفيديو
-      ═══════════════════════════════════════════════════ */}
-
       <VideoPlayer videoUrl={lesson.video_url} />
-
-      {/* ═══════════════════════════════════════════════════
-          وصف / محتوى الدرس
-      ═══════════════════════════════════════════════════ */}
 
       <GlassCard className="p-6 sm:p-8">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-400/10 text-xl">
             📖
           </div>
-
           <div>
             <h2 className="text-lg font-extrabold text-white">
               حول هذا الدرس
             </h2>
-
-            <p className="text-xs text-foam/40">
-              محتوى وملاحظات الدرس
-            </p>
+            <p className="text-xs text-foam/40">محتوى وملاحظات الدرس</p>
           </div>
         </div>
 
@@ -233,74 +266,48 @@ export default function LessonPage() {
         )}
       </GlassCard>
 
-      {/* ═══════════════════════════════════════════════════
-          المصادر
-      ═══════════════════════════════════════════════════ */}
-
       <GlassCard className="p-6">
         <div className="mb-4 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-400/10 text-xl">
             📎
           </div>
-
           <div>
-            <h2 className="text-lg font-extrabold text-white">
-              المصادر
-            </h2>
-
-            <p className="text-xs text-foam/40">
-              ملفات وروابط إضافية
-            </p>
+            <h2 className="text-lg font-extrabold text-white">المصادر</h2>
+            <p className="text-xs text-foam/40">ملفات وروابط إضافية</p>
           </div>
         </div>
 
-        {lesson.resources &&
-        lesson.resources.length > 0 ? (
+        {lesson.resources && lesson.resources.length > 0 ? (
           <ul className="space-y-2">
-            {lesson.resources.map(
-              (resource, i) => {
-                const item = resource as {
-                  url?: string;
-                  title?: string;
-                };
+            {lesson.resources.map((resource, i) => {
+              const item = resource as { url?: string; title?: string };
+              if (!item.url) return null;
 
-                if (!item.url) return null;
-
-                return (
-                  <li key={i}>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-h-[44px] items-center gap-2 font-bold text-cyan-300 transition-colors hover:text-cyan-200"
-                    >
-                      🔗{" "}
-                      {item.title ||
-                        `المصدر ${i + 1}`}
-                    </a>
-                  </li>
-                );
-              }
-            )}
+              return (
+                <li key={i}>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-[44px] items-center gap-2 font-bold text-cyan-300 hover:text-cyan-200"
+                  >
+                    🔗 {item.title || `المصدر ${i + 1}`}
+                  </a>
+                </li>
+              );
+            })}
           </ul>
         ) : (
-          <p className="text-sm text-foam/40">
-            لا توجد مصادر لهذا الدرس.
-          </p>
+          <p className="text-sm text-foam/40">لا توجد مصادر لهذا الدرس.</p>
         )}
       </GlassCard>
-
-      {/* ═══════════════════════════════════════════════════
-          إشعار إتمام الدرس
-      ═══════════════════════════════════════════════════ */}
 
       {notice && (
         <p
           role="status"
           className={cn(
             "rounded-2xl border px-4 py-3 text-sm font-bold",
-            notice.includes("أحسنت") ||
-              notice.includes("مكتمل من قبل")
+            notice.includes("أحسنت") || notice.includes("مكتمل من قبل")
               ? "border-teal-400/30 bg-teal-500/10 text-teal-300"
               : "border-red-400/30 bg-red-500/10 text-red-300"
           )}
@@ -309,16 +316,9 @@ export default function LessonPage() {
         </p>
       )}
 
-      {/* ═══════════════════════════════════════════════════
-          التنقل + إتمام الدرس
-      ═══════════════════════════════════════════════════ */}
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {prev ? (
-          <Link
-            href={lessonHref(prev)}
-            className="btn-secondary w-full"
-          >
+          <Link href={lessonHref(prev)} className="btn-secondary w-full">
             ← الدرس السابق
           </Link>
         ) : (
@@ -333,8 +333,7 @@ export default function LessonPage() {
           disabled={completed || completing}
           className={cn(
             "btn-primary w-full",
-            completed &&
-              "!from-teal-500 !to-teal-400"
+            completed && "!from-teal-500 !to-teal-400"
           )}
         >
           {completed
@@ -345,10 +344,7 @@ export default function LessonPage() {
         </button>
 
         {next ? (
-          <Link
-            href={lessonHref(next)}
-            className="btn-secondary w-full"
-          >
+          <Link href={lessonHref(next)} className="btn-secondary w-full">
             الدرس التالي ←
           </Link>
         ) : (
@@ -361,27 +357,16 @@ export default function LessonPage() {
   );
 }
 
-// ══════════════════════════════════════════════════════
-// Video Player
-// يدعم YouTube + روابط الفيديو المباشرة
-// ══════════════════════════════════════════════════════
-
-function VideoPlayer({
-  videoUrl,
-}: {
-  videoUrl: string | null;
-}) {
+function VideoPlayer({ videoUrl }: { videoUrl: string | null }) {
   if (!videoUrl) {
     return (
       <GlassCard className="overflow-hidden p-0">
         <div className="flex aspect-video items-center justify-center bg-gradient-to-br from-cyan-500/10 via-slate-950 to-teal-500/10">
           <div className="px-6 text-center">
             <div className="text-5xl">🎥</div>
-
             <h2 className="mt-4 text-lg font-extrabold text-white">
               الفيديو غير متوفر بعد
             </h2>
-
             <p className="mt-2 text-sm text-foam/40">
               سيتم إضافة فيديو هذا الدرس قريبًا.
             </p>
@@ -393,7 +378,6 @@ function VideoPlayer({
 
   const youtubeId = getYouTubeVideoId(videoUrl);
 
-  // YouTube
   if (youtubeId) {
     return (
       <GlassCard className="overflow-hidden p-0">
@@ -410,7 +394,6 @@ function VideoPlayer({
     );
   }
 
-  // فيديو مباشر
   if (isDirectVideo(videoUrl)) {
     return (
       <GlassCard className="overflow-hidden p-0">
@@ -429,21 +412,14 @@ function VideoPlayer({
     );
   }
 
-  // رابط غير معروف
   return (
     <GlassCard className="p-6">
       <div className="flex flex-col items-center justify-center text-center">
         <div className="text-5xl">🎥</div>
-
-        <h2 className="mt-4 text-lg font-extrabold text-white">
-          فيديو الدرس
-        </h2>
-
+        <h2 className="mt-4 text-lg font-extrabold text-white">فيديو الدرس</h2>
         <p className="mt-2 max-w-xl text-sm leading-6 text-foam/50">
-          الرابط المضاف لا يمكن تشغيله داخل المنصة
-          مباشرة. يمكنك فتحه من الزر التالي.
+          الرابط المضاف لا يمكن تشغيله داخل المنصة مباشرة. يمكنك فتحه من الزر التالي.
         </p>
-
         <a
           href={videoUrl}
           target="_blank"
@@ -457,53 +433,23 @@ function VideoPlayer({
   );
 }
 
-// ══════════════════════════════════════════════════════
-// استخراج YouTube Video ID
-// يدعم:
-// youtube.com/watch?v=
-// youtu.be/
-// youtube.com/embed/
-// youtube.com/shorts/
-// ══════════════════════════════════════════════════════
-
-function getYouTubeVideoId(
-  url: string
-): string | null {
+function getYouTubeVideoId(url: string): string | null {
   try {
     const parsed = new URL(url);
-    const hostname = parsed.hostname
-      .toLowerCase()
-      .replace(/^www\./, "");
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
 
-    if (
-      hostname === "youtube.com" ||
-      hostname === "m.youtube.com"
-    ) {
-      if (parsed.pathname === "/watch") {
-        return parsed.searchParams.get("v");
+    if (hostname === "youtube.com" || hostname === "m.youtube.com") {
+      if (parsed.pathname === "/watch") return parsed.searchParams.get("v");
+      if (parsed.pathname.startsWith("/embed/")) {
+        return parsed.pathname.split("/embed/")[1]?.split("/")[0] ?? null;
       }
-
-      if (
-        parsed.pathname.startsWith("/embed/")
-      ) {
-        return parsed.pathname
-          .split("/embed/")[1]
-          ?.split("/")[0] ?? null;
-      }
-
-      if (
-        parsed.pathname.startsWith("/shorts/")
-      ) {
-        return parsed.pathname
-          .split("/shorts/")[1]
-          ?.split("/")[0] ?? null;
+      if (parsed.pathname.startsWith("/shorts/")) {
+        return parsed.pathname.split("/shorts/")[1]?.split("/")[0] ?? null;
       }
     }
 
     if (hostname === "youtu.be") {
-      return parsed.pathname
-        .replace("/", "")
-        .split("/")[0] || null;
+      return parsed.pathname.replace("/", "").split("/")[0] || null;
     }
 
     return null;
@@ -512,15 +458,9 @@ function getYouTubeVideoId(
   }
 }
 
-// ══════════════════════════════════════════════════════
-// التحقق من رابط فيديو مباشر
-// ══════════════════════════════════════════════════════
-
 function isDirectVideo(url: string): boolean {
   try {
-    const parsed = new URL(url);
-    const pathname = parsed.pathname.toLowerCase();
-
+    const pathname = new URL(url).pathname.toLowerCase();
     return (
       pathname.endsWith(".mp4") ||
       pathname.endsWith(".webm") ||
@@ -532,4 +472,3 @@ function isDirectVideo(url: string): boolean {
     return false;
   }
 }
-

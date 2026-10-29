@@ -62,6 +62,27 @@ type TeacherLesson = {
   created_at: string;
   video_url: string | null;
 };
+type QuizType = "qcm" | "exam" | "bac" | "pdf" | "written";
+type TeacherQuiz = {
+  id: string;
+  title: string;
+  description: string | null;
+  quiz_type: QuizType;
+  course_id: string | null;
+  created_at: string;
+};
+
+type QuizDraftQuestion = {
+  id: number;
+  text: string;
+  options: {
+    A: string;
+    B: string;
+    C: string;
+    D: string;
+  };
+  correct_option: "A" | "B" | "C" | "D";
+};
 
 type PageState =
   | "loading"
@@ -127,8 +148,10 @@ export default function TeacherWorkspacePage() {
   const [pageState, setPageState] = useState<PageState>("loading");
   const [teacher, setTeacher] = useState<TeacherApplication | null>(null);
   const [userId, setUserId] = useState("");
+  const [showTeacherProfile, setShowTeacherProfile] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [courses, setCourses] = useState<TeacherCourse[]>([]);
+  const [quizzes, setQuizzes] = useState<TeacherQuiz[]>([]);
   const [reels, setReels] = useState<TeacherReel[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [contentMessage, setContentMessage] = useState("");
@@ -137,7 +160,9 @@ export default function TeacherWorkspacePage() {
   const [saving, setSaving] = useState(false);
   const [showCourseForm, setShowCourseForm] = useState(false);
   const [showReelForm, setShowReelForm] = useState(false);
+  const [showQuizForm, setShowQuizForm] = useState(false);
 
+  // Course form state
   const [subjectId, setSubjectId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -145,6 +170,7 @@ export default function TeacherWorkspacePage() {
   const [isFree, setIsFree] = useState(true);
   const [price, setPrice] = useState("");
 
+  // Reel form state
   const [reelTitle, setReelTitle] = useState("");
   const [reelDescription, setReelDescription] = useState("");
   const [reelSubjectId, setReelSubjectId] = useState("");
@@ -152,6 +178,7 @@ export default function TeacherWorkspacePage() {
   const [reelVideoFile, setReelVideoFile] = useState<File | null>(null);
   const [reelThumbnailFile, setReelThumbnailFile] = useState<File | null>(null);
 
+  // Lesson editor state
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [lessons, setLessons] = useState<TeacherLesson[]>([]);
   const [loadingLessons, setLoadingLessons] = useState(false);
@@ -162,6 +189,20 @@ export default function TeacherWorkspacePage() {
   const [lessonVideoUrl, setLessonVideoUrl] = useState("");
   const [lessonResources, setLessonResources] = useState("");
 
+  // Quiz form state
+  const [quizTitle, setQuizTitle] = useState("");
+  const [quizDescription, setQuizDescription] = useState("");
+  const [quizType, setQuizType] = useState<QuizType>("qcm");
+  const [quizCourseId, setQuizCourseId] = useState("");
+  const [nextQuizQuestionId, setNextQuizQuestionId] = useState(2);
+  const [quizQuestions, setQuizQuestions] = useState<QuizDraftQuestion[]>([
+    {
+      id: 1,
+      text: "",
+      options: { A: "", B: "", C: "", D: "" },
+      correct_option: "A",
+    },
+  ]);
   useEffect(() => {
     let active = true;
 
@@ -191,6 +232,7 @@ export default function TeacherWorkspacePage() {
             if (active) setPageState("logged_out");
             return;
           }
+
           throw authError;
         }
 
@@ -216,6 +258,7 @@ export default function TeacherWorkspacePage() {
         }
 
         const application = data as TeacherApplication;
+
         setTeacher(application);
         setUserId(user.id);
 
@@ -235,22 +278,39 @@ export default function TeacherWorkspacePage() {
           return;
         }
 
-        const [subjectsResult, coursesResult, reelsResult] =
-          await Promise.all([
-            supabase.from("subjects").select("id, name").order("name"),
-            supabase
-              .from("courses")
-              .select(
-                "id, subject_id, title, description, thumbnail_url, is_free, price, is_published, review_status, created_at"
-              )
-              .eq("teacher_id", user.id)
-              .order("created_at", { ascending: false }),
-            supabase
-              .from("reels")
-              .select(REEL_SELECT)
-              .eq("teacher_id", user.id)
-              .order("created_at", { ascending: false }),
-          ]);
+        const [
+          subjectsResult,
+          coursesResult,
+          reelsResult,
+          quizzesResult,
+        ] = await Promise.all([
+          supabase
+            .from("subjects")
+            .select("id, name")
+            .order("name"),
+
+          supabase
+            .from("courses")
+            .select(
+              "id, subject_id, title, description, thumbnail_url, is_free, price, is_published, review_status, created_at"
+            )
+            .eq("teacher_id", user.id)
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("reels")
+            .select(REEL_SELECT)
+            .eq("teacher_id", user.id)
+            .order("created_at", { ascending: false }),
+
+          supabase
+            .from("quizzes")
+            .select(
+              "id, title, description, quiz_type, course_id, created_at"
+            )
+            .eq("teacher_id", user.id)
+            .order("created_at", { ascending: false }),
+        ]);
 
         if (!active) return;
 
@@ -259,7 +319,9 @@ export default function TeacherWorkspacePage() {
             "تعذّر تحميل قائمة المواد. حدّث الصفحة وحاول مجددًا."
           );
         } else {
-          const loadedSubjects = (subjectsResult.data ?? []) as Subject[];
+          const loadedSubjects =
+            (subjectsResult.data ?? []) as Subject[];
+
           setSubjects(loadedSubjects);
 
           const matchingSubject = loadedSubjects.find(
@@ -274,24 +336,54 @@ export default function TeacherWorkspacePage() {
         }
 
         if (coursesResult.error) {
+          console.error(
+            "Load teacher courses error:",
+            coursesResult.error
+          );
+
           setContentError((current) =>
             current
               ? `${current} وتعذّر تحميل دوراتك.`
               : "تعذّر تحميل دوراتك. حاول تحديث الصفحة."
           );
         } else {
-          setCourses((coursesResult.data ?? []) as TeacherCourse[]);
+          setCourses(
+            (coursesResult.data ?? []) as TeacherCourse[]
+          );
         }
 
         if (reelsResult.error) {
-          console.error("Load teacher reels error:", reelsResult.error);
+          console.error(
+            "Load teacher reels error:",
+            reelsResult.error
+          );
+
           setContentError((current) =>
             current
               ? `${current} وتعذّر تحميل ريلزاتك.`
               : "تعذّر تحميل ريلزاتك. تحقق من صلاحيات جدول الريلزات."
           );
         } else {
-          setReels((reelsResult.data ?? []) as TeacherReel[]);
+          setReels(
+            (reelsResult.data ?? []) as TeacherReel[]
+          );
+        }
+
+        if (quizzesResult.error) {
+          console.error(
+            "Load teacher quizzes error:",
+            quizzesResult.error
+          );
+
+          setContentError((current) =>
+            current
+              ? `${current} وتعذّر تحميل اختباراتك.`
+              : "تعذّر تحميل اختباراتك. حاول تحديث الصفحة."
+          );
+        } else {
+          setQuizzes(
+            (quizzesResult.data ?? []) as TeacherQuiz[]
+          );
         }
 
         setPageState("approved");
@@ -518,6 +610,128 @@ export default function TeacherWorkspacePage() {
 
     return data.publicUrl;
   }
+  
+  async function handleCreateQuiz(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setContentError("");
+    setContentMessage("");
+
+    const supabase = getSupabase();
+
+    if (!supabase || !userId) {
+      setContentError("انتهت الجلسة أو تعذّر الاتصال. سجّل الدخول مجددًا.");
+      return;
+    }
+
+    if (pageState !== "approved" || teacher?.status !== "approved") {
+      setContentError("إنشاء الاختبارات متاح للأساتذة المقبولين فقط.");
+      return;
+    }
+
+    if (quizType !== "qcm") {
+      setContentError(
+        "حفظ هذا النوع غير متاح حاليًا. إنشاء الاختبارات مفعّل الآن لنوع QCM فقط."
+      );
+      return;
+    }
+
+    if (!quizTitle.trim()) {
+      setContentError("عنوان الاختبار مطلوب.");
+      return;
+    }
+
+    if (quizQuestions.length === 0) {
+      setContentError("أضف سؤالًا واحدًا على الأقل.");
+      return;
+    }
+
+    const invalidQuestion = quizQuestions.find(
+      (question) =>
+        !question.text.trim() ||
+        (["A", "B", "C", "D"] as const).some(
+          (option) => !question.options[option].trim()
+        )
+    );
+
+    if (invalidQuestion) {
+      setContentError("أكمل نص كل سؤال والخيارات الأربعة قبل الحفظ.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const { data, error } = await supabase.rpc("create_teacher_quiz", {
+        p_title: quizTitle.trim(),
+        p_description: quizDescription.trim() || null,
+        p_quiz_type: quizType,
+        p_course_id: quizCourseId || null,
+        p_questions: quizQuestions.map((question) => ({
+          text: question.text.trim(),
+          options: {
+            A: question.options.A.trim(),
+            B: question.options.B.trim(),
+            C: question.options.C.trim(),
+            D: question.options.D.trim(),
+          },
+          correct_option: question.correct_option,
+        })),
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error("لم يتم إرجاع معرّف الاختبار بعد الحفظ.");
+      }
+
+      const {
+  data: refreshedQuizzes,
+  error: refreshedQuizzesError,
+} = await supabase
+  .from("quizzes")
+  .select("id, title, description, quiz_type, course_id, created_at")
+  .eq("teacher_id", userId)
+  .order("created_at", { ascending: false });
+
+if (refreshedQuizzesError) {
+  console.error(
+    "Refresh teacher quizzes error:",
+    refreshedQuizzesError
+  );
+} else {
+  setQuizzes((refreshedQuizzes ?? []) as TeacherQuiz[]);
+}
+
+setContentMessage("تم حفظ الاختبار وأسئلته بنجاح.");
+
+      setQuizTitle("");
+      setQuizDescription("");
+      setQuizType("qcm");
+      setQuizCourseId("");
+      setQuizQuestions([
+        {
+          id: 1,
+          text: "",
+          options: { A: "", B: "", C: "", D: "" },
+          correct_option: "A",
+        },
+      ]);
+      setNextQuizQuestionId(2);
+      setShowQuizForm(false);
+    } catch (error: unknown) {
+      console.error("Create teacher quiz error:", error);
+      setContentError(
+        error instanceof Error
+          ? error.message
+          : "تعذّر حفظ الاختبار. حاول مجددًا."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
 
   async function handleCreateReel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1130,14 +1344,33 @@ export default function TeacherWorkspacePage() {
         <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-blue-500/10 blur-[120px]" />
       </div>
 
-      <header className="relative z-10 border-b border-white/10">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-5 sm:px-6">
-          <Link href="/" className="text-lg font-black sm:text-xl">
-            MARIS <span className="text-cyan-400">ACADEMY ²⁰²⁷</span>
-          </Link>
-          <Link href="/teachers" className={buttonClass}>الصفحة العامة</Link>
-        </div>
-      </header>
+    
+<header className="relative z-20 border-b border-white/10 bg-[#061426]/80 backdrop-blur-xl">
+  <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
+    <Link href="/" className="text-lg font-black sm:text-xl">
+      MARIS <span className="text-cyan-400">ACADEMY ²⁰²⁷</span>
+    </Link>
+
+    <nav className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setShowTeacherProfile((value) => !value)}
+        aria-expanded={showTeacherProfile}
+        className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2.5 text-sm font-bold text-cyan-200 transition hover:border-cyan-300/60 hover:bg-cyan-400/20"
+      >
+        {showTeacherProfile ? "إغلاق ملفي" : "👤 ملفي"}
+      </button>
+
+      <Link
+        href="/forum"
+        className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-bold text-white transition hover:border-cyan-400/30 hover:bg-cyan-400/10"
+      >
+        💬 المنتدى
+      </Link>
+    </nav>
+  </div>
+</header>
+
 
       <section className="relative z-10 mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
         <div className="mb-8">
@@ -1150,29 +1383,109 @@ export default function TeacherWorkspacePage() {
           <p className="mt-3 max-w-2xl text-sm leading-7 text-white/55 sm:text-base">
             حضّر دوراتك ودروسك وريلزاتك، ثم أرسل المحتوى للإدارة للمراجعة قبل النشر.
           </p>
+                </div>
+
+        {/* إحصائيات الأستاذ */}
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="group rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-400/[0.12] to-[#071a2d]/90 p-5 transition duration-300 hover:-translate-y-1 hover:border-cyan-300/40">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-white/60">
+                  دوراتي التعليمية
+                </p>
+                <p className="mt-3 text-3xl font-black text-white">
+                  {courses.length}
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-2xl">
+                📚
+              </div>
+            </div>
+            <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/5">
+              <div className="h-full w-full rounded-full bg-cyan-400/70" />
+            </div>
+          </div>
+
+          <div className="group rounded-2xl border border-blue-400/20 bg-gradient-to-br from-blue-400/[0.12] to-[#071a2d]/90 p-5 transition duration-300 hover:-translate-y-1 hover:border-blue-300/40">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-white/60">
+                  الريلز التعليمية
+                </p>
+                <p className="mt-3 text-3xl font-black text-white">
+                  {reels.length}
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-400/10 text-2xl">
+                🎬
+              </div>
+            </div>
+            <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/5">
+              <div className="h-full w-full rounded-full bg-blue-400/70" />
+            </div>
+          </div>
+
+          <div className="group rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-400/[0.12] to-[#071a2d]/90 p-5 transition duration-300 hover:-translate-y-1 hover:border-violet-300/40">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-white/60">
+                  الاختبارات
+                </p>
+                <p className="mt-3 text-3xl font-black text-white">
+                  {quizzes.length}
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-violet-400/20 bg-violet-400/10 text-2xl">
+                🧩
+              </div>
+            </div>
+            <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/5">
+              <div className="h-full w-full rounded-full bg-violet-400/70" />
+            </div>
+          </div>
         </div>
 
         <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr]">
-          <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-6 sm:p-8">
-            <h2 className="text-xl font-black">معلوماتك المهنية</h2>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <InfoItem label="الاسم واللقب">
-                {teacher?.first_name} {teacher?.last_name}
-              </InfoItem>
-              <InfoItem label="البريد الإلكتروني">{teacher?.email}</InfoItem>
-              <InfoItem label="المادة">{teacher?.subject}</InfoItem>
-              <InfoItem label="الشعبة">{teacher?.stream}</InfoItem>
-            </div>
-            <div className="mt-5 rounded-2xl border border-white/10 bg-[#071a2d]/80 p-5">
-              <h3 className="text-sm font-bold text-cyan-300">نبذة عنك</h3>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-8 text-white/65">
-                {teacher?.bio || "لم تتم إضافة نبذة."}
-              </p>
-            </div>
-          </section>
+          {showTeacherProfile && (
+            <section className="rounded-3xl border border-cyan-400/20 bg-gradient-to-bl from-cyan-400/[0.08] to-white/[0.035] p-6 shadow-xl shadow-cyan-950/20 sm:p-8">
+              <div className="mb-6 flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold text-cyan-300">
+                    MARIS ACADEMY
+                  </span>
+                  <h2 className="mt-2 text-xl font-black">ملفي المهني</h2>
+                </div>
+                <span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1.5 text-xs font-black text-cyan-200">
+                  🎓 أستاذ
+                </span>
+              </div>
 
-          <section className="rounded-3xl border border-cyan-400/15 bg-gradient-to-bl from-cyan-400/[0.08] to-white/[0.02] p-6 sm:p-8">
-            <div className="text-3xl" aria-hidden>📚</div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <InfoItem label="الاسم واللقب">
+                  {teacher?.first_name} {teacher?.last_name}
+                </InfoItem>
+                <InfoItem label="البريد الإلكتروني">
+                  {teacher?.email}
+                </InfoItem>
+                <InfoItem label="المادة">{teacher?.subject}</InfoItem>
+                <InfoItem label="الشعبة">{teacher?.stream}</InfoItem>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-[#071a2d]/80 p-5">
+                <h3 className="text-sm font-bold text-cyan-300">نبذة عنك</h3>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-8 text-white/65">
+                  {teacher?.bio || "لم تتم إضافة نبذة."}
+                </p>
+              </div>
+            </section>
+          )}
+
+          <section
+            className={`rounded-3xl border border-cyan-400/15 bg-gradient-to-bl from-cyan-400/[0.08] to-white/[0.02] p-6 sm:p-8 ${
+              showTeacherProfile ? "" : "md:col-span-2"
+            }`}
+          >
+            <div className="text-3xl" aria-hidden="true">📚</div>
             <h2 className="mt-4 text-xl font-black">أدواتك التعليمية</h2>
             <p className="mt-3 text-sm leading-8 text-white/60">
               أنشئ دوراتك وأضف الدروس، أو حضّر ريلزًا تعليميًا. كل المحتوى يبقى غير منشور حتى تراجعه الإدارة.
@@ -1203,11 +1516,32 @@ export default function TeacherWorkspacePage() {
             </button>
 
             <div className="mt-4">
-              <WorkspaceItem
-                icon="🧩"
-                title="إعداد الاختبارات"
-                description="سيُضاف في خطوة لاحقة"
-              />
+              <button
+                type="button"
+                onClick={() => {
+                  setContentMessage("");
+                  setContentError("");
+                  setShowCourseForm(false);
+                  setShowReelForm(false);
+                  setShowQuizForm((value) => !value);
+                }}
+                className="w-full rounded-xl border border-cyan-400/30 bg-[#071a2d]/80 px-5 py-4 text-right transition hover:border-cyan-300/60 hover:bg-cyan-400/10"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="text-2xl" aria-hidden="true">🧩</span>
+                  <span className="flex-1">
+                    <span className="block font-black text-white">
+                      {showQuizForm ? "إغلاق إعداد الاختبارات" : "إعداد الاختبارات"}
+                    </span>
+                    <span className="mt-1 block text-sm text-white/60">
+                      إنشاء اختبار واختيار نوعه وإضافة الأسئلة
+                    </span>
+                  </span>
+                  <span className="text-cyan-300">
+                    {showQuizForm ? "−" : "+"}
+                  </span>
+                </span>
+              </button>
             </div>
 
             <div className="mt-6 rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-4 text-xs leading-7 text-cyan-100/80">
@@ -1215,6 +1549,8 @@ export default function TeacherWorkspacePage() {
             </div>
           </section>
         </div>
+
+
 
         {showCourseForm && (
           <section className="mt-6 rounded-3xl border border-cyan-400/20 bg-white/[0.035] p-6 sm:p-8">
@@ -1480,7 +1816,305 @@ export default function TeacherWorkspacePage() {
             </form>
           </section>
         )}
+        
+{showQuizForm && (
+  <form
+    onSubmit={handleCreateQuiz}
+    className="mt-6 space-y-6 rounded-3xl border border-cyan-400/20 bg-[#071a2d]/90 p-6 sm:p-8"
+  >
+    <div>
+      <h2 className="text-2xl font-black text-white">
+        إعداد اختبار جديد
+      </h2>
+      <p className="mt-2 text-sm leading-7 text-white/60">
+        حضّر الاختبار وحدّد نوعه، ثم أضف الأسئلة المناسبة.
+      </p>
+    </div>
 
+            <div className="grid gap-5 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-white/80">
+                  عنوان الاختبار
+                </span>
+                <input
+                  value={quizTitle}
+                  onChange={(event) => setQuizTitle(event.target.value)}
+                  placeholder="مثال: اختبار الفصل الأول"
+                  className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-bold text-white/80">
+                  نوع الاختبار
+                </span>
+                <select
+                  value={quizType}
+                  onChange={(event) =>
+                    setQuizType(event.target.value as QuizType)
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="qcm">QCM — أسئلة الاختيار المتعدد</option>
+                  <option value="exam">الفروض والاختبارات</option>
+                  <option value="bac">مواضيع البكالوريا</option>
+                  <option value="pdf">اختبارات PDF</option>
+                  <option value="written">الإجابات الكتابية</option>
+                </select>
+              </label>
+
+              <label className="block sm:col-span-2">
+                <span className="mb-2 block text-sm font-bold text-white/80">
+                  وصف الاختبار
+                </span>
+                <textarea
+                  value={quizDescription}
+                  onChange={(event) =>
+                    setQuizDescription(event.target.value)
+                  }
+                  rows={3}
+                  placeholder="اكتب تعليمات أو وصفًا مختصرًا للاختبار..."
+                  className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                />
+              </label>
+
+              <label className="block sm:col-span-2">
+                <span className="mb-2 block text-sm font-bold text-white/80">
+                  الدورة المرتبطة (اختياري)
+                </span>
+                <select
+                  value={quizCourseId}
+                  onChange={(event) => setQuizCourseId(event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                >
+                  <option value="">بدون دورة</option>
+                  {courses.map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {course.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {quizType === "qcm" ? (
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-lg font-black text-cyan-200">
+                    أسئلة الاختيار المتعدد
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuizQuestions((previous) => [
+                        ...previous,
+                        {
+                          id: nextQuizQuestionId,
+                          text: "",
+                          options: { A: "", B: "", C: "", D: "" },
+                          correct_option: "A",
+                        },
+                      ]);
+                      setNextQuizQuestionId((previous) => previous + 1);
+                    }}
+                    className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-200 hover:bg-cyan-400/20"
+                  >
+                    + إضافة سؤال
+                  </button>
+                </div>
+
+                {quizQuestions.map((question, index) => (
+                  <div
+                    key={question.id}
+                    className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="font-black text-white">
+                        السؤال {index + 1}
+                      </h4>
+                      {quizQuestions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setQuizQuestions((previous) =>
+                              previous.filter(
+                                (item) => item.id !== question.id
+                              )
+                            )
+                          }
+                          className="text-sm font-bold text-red-300 hover:text-red-200"
+                        >
+                          حذف السؤال
+                        </button>
+                      )}
+                    </div>
+
+                    <textarea
+                      value={question.text}
+                      onChange={(event) =>
+                        setQuizQuestions((previous) =>
+                          previous.map((item) =>
+                            item.id === question.id
+                              ? { ...item, text: event.target.value }
+                              : item
+                          )
+                        )
+                      }
+                      rows={2}
+                      placeholder="اكتب نص السؤال..."
+                      className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                    />
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {(["A", "B", "C", "D"] as const).map((option) => (
+                        <label key={option} className="block">
+                          <span className="mb-2 block text-sm font-bold text-white/70">
+                            الاختيار {option}
+                          </span>
+                          <input
+                            value={question.options[option]}
+                            onChange={(event) =>
+                              setQuizQuestions((previous) =>
+                                previous.map((item) =>
+                                  item.id === question.id
+                                    ? {
+                                        ...item,
+                                        options: {
+                                          ...item.options,
+                                          [option]: event.target.value,
+                                        },
+                                      }
+                                    : item
+                                )
+                              )
+                            }
+                            placeholder={`نص الاختيار ${option}`}
+                            className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                          />
+                        </label>
+                      ))}
+                    </div>
+
+                    <label className="block">
+                      <span className="mb-2 block text-sm font-bold text-white/80">
+                        الإجابة الصحيحة
+                      </span>
+                      <select
+                        value={question.correct_option}
+                        onChange={(event) =>
+                          setQuizQuestions((previous) =>
+                            previous.map((item) =>
+                              item.id === question.id
+                                ? {
+                                    ...item,
+                                    correct_option: event.target.value as
+                                      | "A"
+                                      | "B"
+                                      | "C"
+                                      | "D",
+                                  }
+                                : item
+                            )
+                          )
+                        }
+                        className="w-full rounded-xl border border-white/10 bg-[#061426] px-4 py-3 text-white outline-none focus:border-cyan-400"
+                      >
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                        <option value="D">D</option>
+                      </select>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4 text-sm leading-7 text-amber-100/90">
+                الواجهة الأساسية لهذا النوع جاهزة. إضافة محتوى {quizType === "exam"
+                  ? "الفروض والاختبارات"
+                  : quizType === "bac"
+                    ? "مواضيع البكالوريا"
+                    : quizType === "pdf"
+                      ? "PDF"
+                      : "الإجابات الكتابية"}{" "}
+                تحتاج محرّرًا مخصصًا له. ما زال هذا النموذج لا يحفظ الاختبار في قاعدة البيانات.
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuizForm(false);
+                  setContentError("");
+                  setContentMessage("");
+                }}
+                className="rounded-xl border border-white/10 px-5 py-3 font-bold text-white/80 hover:bg-white/5"
+              >
+                إغلاق
+              </button>
+              <button
+  type="submit"
+  disabled={saving || quizType !== "qcm"}
+  className="rounded-xl bg-cyan-400 px-5 py-3 font-black text-[#061426] transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+>
+  {saving ? "جارٍ حفظ الاختبار..." : "حفظ الاختبار"}
+</button>
+            </div>
+                    </form>
+        )}
+
+        {/* قائمة اختبارات الأستاذ */}
+        <section className="mt-6 rounded-3xl border border-cyan-400/20 bg-[#071a2d]/90 p-6">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-black text-white">
+                اختباراتي
+              </h2>
+              <p className="mt-2 text-sm text-white/50">
+                قائمة الاختبارات التي أنشأتها من فضاء الأستاذ.
+              </p>
+            </div>
+
+            <span className="rounded-xl bg-cyan-400/10 px-3 py-2 font-bold text-cyan-300">
+              {quizzes.length}
+            </span>
+          </div>
+
+          {quizzes.length === 0 ? (
+            <p className="rounded-2xl border border-white/10 p-5 text-center text-sm text-white/60">
+              مازال ما كاين حتى اختبار في القائمة.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {quizzes.map((quiz) => (
+                <article
+                  key={quiz.id}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                >
+                  <h3 className="font-bold text-white">
+                    {quiz.title}
+                  </h3>
+
+                  {quiz.description && (
+                    <p className="mt-2 text-sm leading-6 text-white/60">
+                      {quiz.description}
+                    </p>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-white/50">
+                    <span className="rounded-lg bg-cyan-400/10 px-3 py-1.5 text-cyan-300">
+                      {quiz.quiz_type.toUpperCase()}
+                    </span>
+                    <span>
+                      {new Date(quiz.created_at).toLocaleDateString("ar-DZ")}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
         {contentError && !showCourseForm && !showReelForm && (
           <p role="alert" className="mt-6 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm leading-7 text-red-200">
             {contentError}
@@ -1999,3 +2633,4 @@ function WorkspaceItem({
     </div>
   );
 }
+

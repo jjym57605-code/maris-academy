@@ -1,4 +1,4 @@
-
+﻿
 "use client";
 
 import Link from "next/link";
@@ -31,9 +31,9 @@ const ADMIN_ITEMS = [
     active: true,
   },
   {
-    label: "مراجعة دورات الأساتذة",
+    label: "مراجعة محتوى الأساتذة",
     icon: "🧑‍🏫",
-    href: "/admin/course-reviews",
+    href: "/admin/teacher-courses",
     active: true,
   },
   {
@@ -219,3 +219,4 @@ export default function AdminLayout({
     </div>
   );
 }
+

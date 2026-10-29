@@ -46,6 +46,7 @@ export default function ForumPage() {
   const [error, setError] = useState(false);
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [isApprovedTeacher, setIsApprovedTeacher] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
 
@@ -99,6 +100,17 @@ export default function ForumPage() {
       }
 
       setUserId(user.id);
+      const { data: teacherApplication, error: teacherError } = await supabase
+  .from("teacher_applications")
+  .select("status")
+  .eq("id", user.id)
+  .maybeSingle();
+
+if (teacherError) {
+  throw teacherError;
+}
+
+setIsApprovedTeacher(teacherApplication?.status === "approved");
 
       const result = await getForumPosts(supabase, user.id);
 
@@ -288,11 +300,13 @@ export default function ForumPage() {
         <div className="relative flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div>
             <Link
-              href="/dashboard"
-              className="mb-3 inline-flex items-center gap-2 text-sm text-cyan-300 transition hover:text-cyan-200"
-            >
-              ← العودة إلى لوحة التحكم
-            </Link>
+  href={isApprovedTeacher ? "/teachers/workspace" : "/dashboard"}
+  className="mb-3 inline-flex items-center gap-2 text-sm text-cyan-300 transition hover:text-cyan-200"
+>
+  {isApprovedTeacher
+    ? "← رجوع إلى فضاء الأستاذ"
+    : "← العودة إلى لوحة التحكم"}
+</Link>
 
             <div className="flex items-center gap-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-300/20 bg-cyan-400/10 text-3xl">
